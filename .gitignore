@@ -1,0 +1,90 @@
+# ============================================================
+# ai-2d-video · Git 忽略规则
+# 原则：源码、配置、默认素材进版本库；生成物、本地数据、密钥不进。
+# 带 ! 开头的行是「例外」，用于保留占位文件 .gitkeep。
+# ============================================================
+
+# ---------- 依赖 ----------
+node_modules/
+.pnp.*
+.yarn/cache/
+.yarn/install-state.gz
+
+# ---------- 构建产物 ----------
+dist/
+build/
+out/
+*.tsbuildinfo
+.vite/
+.cache/
+
+# ---------- 运行期数据（本地生成，各机器不同）----------
+data/workbench.sqlite
+data/workbench.sqlite-*
+data/projects/*/
+!data/projects/.gitkeep
+
+# 其它位置的 SQLite 文件，防止误提交
+*.sqlite
+*.sqlite3
+*.sqlite-*
+*.db
+*.db-journal
+
+# ---------- 成片与临时渲染 ----------
+output/*
+!output/.gitkeep
+
+# .probe 是调试用的渲染探针输出（成片、逐帧图、音轨），体积很大
+.probe/
+tmp/
+temp/
+*.tmp
+
+# ---------- 素材：默认素材进库，用户上传/生成的不进 ----------
+assets/images/*
+assets/audio/*
+assets/video/*
+assets/music/*
+!assets/images/.gitkeep
+!assets/audio/.gitkeep
+!assets/video/.gitkeep
+!assets/music/.gitkeep
+# assets/characters/ 是随项目发布的角色资产，保持入库
+
+# ---------- 本地调试脚本 ----------
+# 约定：以 _ 开头的脚本是临时验证脚本，不提交
+scripts/_*
+scripts/__pycache__/
+
+# ---------- Python（scripts/ 下的生成脚本）----------
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# ---------- 日志 ----------
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ---------- 密钥与本地环境变量 ----------
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# ---------- 编辑器与 IDE ----------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ---------- 操作系统 ----------
+.DS_Store
+Thumbs.db
+desktop.ini
