@@ -1,0 +1,110 @@
+{
+  "version": 2,
+  "assets": [
+    {
+      "id": "scene-living-room",
+      "kind": "scene",
+      "name": "客厅",
+      "file": "scenes/living-room.svg",
+      "width": 1080,
+      "height": 1920,
+      "category": "室内",
+      "anchorX": 0,
+      "anchorY": 0
+    },
+    {
+      "id": "scene-kitchen",
+      "kind": "scene",
+      "name": "厨房",
+      "file": "scenes/kitchen.svg",
+      "width": 1080,
+      "height": 1920,
+      "category": "室内",
+      "anchorX": 0,
+      "anchorY": 0
+    },
+    {
+      "id": "scene-office",
+      "kind": "scene",
+      "name": "办公室",
+      "file": "scenes/office.svg",
+      "width": 1080,
+      "height": 1920,
+      "category": "室内",
+      "anchorX": 0,
+      "anchorY": 0
+    },
+    {
+      "id": "prop-sofa",
+      "kind": "prop",
+      "name": "沙发",
+      "file": "props/sofa.svg",
+      "width": 320,
+      "height": 180,
+      "category": "家具"
+    },
+    {
+      "id": "prop-table",
+      "kind": "prop",
+      "name": "桌子",
+      "file": "props/table.svg",
+      "width": 280,
+      "height": 150,
+      "category": "家具"
+    },
+    {
+      "id": "prop-tv",
+      "kind": "prop",
+      "name": "电视",
+      "file": "props/tv.svg",
+      "width": 260,
+      "height": 200,
+      "category": "电器"
+    },
+    {
+      "id": "prop-fridge",
+      "kind": "prop",
+      "name": "冰箱",
+      "file": "props/fridge.svg",
+      "width": 200,
+      "height": 360,
+      "category": "电器"
+    },
+    {
+      "id": "prop-cake",
+      "kind": "prop",
+      "name": "蛋糕",
+      "file": "props/cake.svg",
+      "width": 160,
+      "height": 140,
+      "category": "食物"
+    },
+    {
+      "id": "prop-cup",
+      "kind": "prop",
+      "name": "杯子",
+      "file": "props/cup.svg",
+      "width": 100,
+      "height": 120,
+      "category": "餐具"
+    },
+    {
+      "id": "char-old-wang",
+      "kind": "character",
+      "name": "老王",
+      "file": "characters/old-wang/character.json",
+      "width": 360,
+      "height": 600,
+      "category": "角色"
+    },
+    {
+      "id": "char-xiao-li",
+      "kind": "character",
+      "name": "小李",
+      "file": "characters/xiao-li/character.json",
+      "width": 360,
+      "height": 600,
+      "category": "角色"
+    }
+  ]
+}

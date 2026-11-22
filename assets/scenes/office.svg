@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920">
+  <rect x="0" y="0" width="1080" height="1380" fill="#E7EBF2"/>
+  <rect x="0" y="1380" width="1080" height="540" fill="#B6A793"/>
+  <rect x="0" y="1380" width="1080" height="18" fill="#938571"/>
+  <g stroke="#A89A85" stroke-width="3">
+    <line x1="0" y1="1510" x2="1080" y2="1510"/>
+    <line x1="0" y1="1660" x2="1080" y2="1660"/>
+    <line x1="0" y1="1810" x2="1080" y2="1810"/>
+    <line x1="240" y1="1398" x2="240" y2="1920"/>
+    <line x1="780" y1="1398" x2="780" y2="1920"/>
+  </g>
+  <rect x="100" y="160" width="340" height="400" rx="8" fill="#C6D8E8" stroke="#6E7C93" stroke-width="14"/>
+  <line x1="270" y1="160" x2="270" y2="560" stroke="#6E7C93" stroke-width="10"/>
+  <line x1="100" y1="360" x2="440" y2="360" stroke="#6E7C93" stroke-width="10"/>
+  <rect x="620" y="140" width="370" height="560" rx="6" fill="#F4F6FA" stroke="#6E7C93" stroke-width="12"/>
+  <line x1="620" y1="320" x2="990" y2="320" stroke="#6E7C93" stroke-width="8"/>
+  <line x1="620" y1="500" x2="990" y2="500" stroke="#6E7C93" stroke-width="8"/>
+  <rect x="660" y="190" width="40" height="100" rx="4" fill="#5B8DEF"/>
+  <rect x="710" y="210" width="40" height="80" rx="4" fill="#E5A63B"/>
+  <rect x="760" y="180" width="40" height="110" rx="4" fill="#D9786A"/>
+  <rect x="660" y="370" width="40" height="100" rx="4" fill="#6FA37C"/>
+  <rect x="710" y="360" width="40" height="110" rx="4" fill="#5B8DEF"/>
+  <rect x="760" y="390" width="40" height="80" rx="4" fill="#E5A63B"/>
+  <rect x="660" y="540" width="140" height="130" rx="4" fill="#C9D4E4"/>
+  <rect x="0" y="980" width="1080" height="46" fill="#8D7A63"/>
+  <rect x="140" y="1026" width="800" height="34" fill="#A08C72"/>
+  <rect x="190" y="1060" width="34" height="320" fill="#8D7A63"/>
+  <rect x="856" y="1060" width="34" height="320" fill="#8D7A63"/>
+  <rect x="400" y="880" width="280" height="180" rx="8" fill="#3B4658" stroke="#26303E" stroke-width="10"/>
+  <rect x="420" y="900" width="240" height="140" fill="#6C9BD1"/>
+  <rect x="510" y="1060" width="60" height="40" fill="#3B4658"/>
+  <rect x="470" y="1096" width="140" height="12" rx="4" fill="#3B4658"/>
+  <rect x="240" y="1200" width="180" height="24" rx="6" fill="#4A5668"/>
+  <ellipse cx="540" cy="1740" rx="400" ry="110" fill="#A2947F" opacity="0.6"/>
+</svg>

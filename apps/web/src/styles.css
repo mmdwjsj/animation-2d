@@ -1,0 +1,85 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-bg-page: #15171b;
+  --color-bg-panel: #1e2229;
+  --color-bg-subtle: #252a33;
+  /* 浮层（下拉菜单、气泡）需要比面板再亮一档，避免与卡片混在一起 */
+  --color-bg-elevated: #2b313c;
+  --color-bg-hovered: #363e4b;
+  --color-border: #343a46;
+  --color-text-primary: #e8ebf0;
+  --color-text-secondary: #9aa3b2;
+  --color-accent: #5b8def;
+  --color-success: #35b779;
+  --color-warning: #e5a63b;
+  --color-error: #e45d5d;
+
+  --topbar-height: 56px;
+  --sidenav-width: 200px;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    min-width: 1200px;
+    min-height: 700px;
+    background: var(--color-bg-page);
+    color: var(--color-text-primary);
+    font-family: 'Microsoft YaHei', 'PingFang SC', 'Segoe UI', system-ui, sans-serif;
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  button,
+  input,
+  select {
+    font: inherit;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-border);
+    border-radius: 6px;
+  }
+}
+
+@layer components {
+  .field-input {
+    @apply w-full rounded border border-line bg-page px-3 py-2 text-ink placeholder:text-muted;
+  }
+  .field-input:focus {
+    border-color: var(--color-accent);
+  }
+  .field-input:disabled {
+    @apply cursor-not-allowed opacity-60;
+  }
+  .field-label {
+    @apply mb-1.5 block text-xs text-muted;
+  }
+  .panel-surface {
+    @apply border border-line bg-panel;
+  }
+  .section-title {
+    @apply text-xs font-semibold uppercase tracking-wider text-muted;
+  }
+}

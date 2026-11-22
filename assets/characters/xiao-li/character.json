@@ -1,0 +1,35 @@
+{
+  "id": "char-xiao-li",
+  "name": "小李",
+  "version": 1,
+  "postures": {
+    "standing": {
+      "size": { "width": 360, "height": 600 },
+      "anchor": { "x": 180, "y": 600 },
+      "anchorLabel": "脚底中心",
+      "layers": [
+        { "role": "body", "file": "standing/body.svg", "box": { "x": 0, "y": 0, "width": 360, "height": 600 }, "zIndex": 0 },
+        { "role": "head", "file": "standing/head.svg", "box": { "x": 90, "y": 20, "width": 180, "height": 200 }, "zIndex": 1 },
+        { "role": "eyes", "variant": "open", "file": "faces/eyes_open.svg", "box": { "x": 128, "y": 100, "width": 104, "height": 34 }, "zIndex": 2 },
+        { "role": "eyes", "variant": "closed", "file": "faces/eyes_closed.svg", "box": { "x": 128, "y": 100, "width": 104, "height": 34 }, "zIndex": 2 },
+        { "role": "mouth", "variant": "closed", "file": "faces/mouth_closed.svg", "box": { "x": 146, "y": 150, "width": 68, "height": 40 }, "zIndex": 3 },
+        { "role": "mouth", "variant": "open_small", "file": "faces/mouth_open_small.svg", "box": { "x": 146, "y": 150, "width": 68, "height": 40 }, "zIndex": 3 },
+        { "role": "mouth", "variant": "open_large", "file": "faces/mouth_open_large.svg", "box": { "x": 146, "y": 150, "width": 68, "height": 40 }, "zIndex": 3 }
+      ]
+    },
+    "sitting": {
+      "size": { "width": 360, "height": 600 },
+      "anchor": { "x": 180, "y": 580 },
+      "anchorLabel": "坐姿接触点",
+      "layers": [
+        { "role": "body", "file": "sitting/body.svg", "box": { "x": 0, "y": 0, "width": 360, "height": 600 }, "zIndex": 0 },
+        { "role": "head", "file": "sitting/head.svg", "box": { "x": 90, "y": 120, "width": 180, "height": 200 }, "zIndex": 1 },
+        { "role": "eyes", "variant": "open", "file": "faces/eyes_open.svg", "box": { "x": 128, "y": 200, "width": 104, "height": 34 }, "zIndex": 2 },
+        { "role": "eyes", "variant": "closed", "file": "faces/eyes_closed.svg", "box": { "x": 128, "y": 200, "width": 104, "height": 34 }, "zIndex": 2 },
+        { "role": "mouth", "variant": "closed", "file": "faces/mouth_closed.svg", "box": { "x": 146, "y": 250, "width": 68, "height": 40 }, "zIndex": 3 },
+        { "role": "mouth", "variant": "open_small", "file": "faces/mouth_open_small.svg", "box": { "x": 146, "y": 250, "width": 68, "height": 40 }, "zIndex": 3 },
+        { "role": "mouth", "variant": "open_large", "file": "faces/mouth_open_large.svg", "box": { "x": 146, "y": 250, "width": 68, "height": 40 }, "zIndex": 3 }
+      ]
+    }
+  }
+}

@@ -1,0 +1,1 @@
+export { parseScript } from './parseScript';
