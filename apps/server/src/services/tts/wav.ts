@@ -94,3 +94,67 @@ export function readWavDurationMs(buffer: Buffer): number {
   const bits = buffer.readUInt16LE(34);
   return (dataSize / (channels * (bits / 8)) / sampleRate) * 1000;
 }
+
+export interface DecodedWav {
+  /** 交错 PCM16 样本；多声道时按帧交错，包络计算按全部样本求 RMS。 */
+  samples: Int16Array;
+  sampleRate: number;
+  channels: number;
+}
+
+/**
+ * 解码标准 PCM 16-bit WAV（支持 fmt 块之外的额外 chunk）。
+ * 供外部 TTS 引擎产出的 WAV 复用同一套「真实时长 + 振幅包络」计算，
+ * 非 PCM / 缺 data 块 / 截断文件一律明确报错，不静默返回空音频。
+ */
+export function decodeWavPcm(buffer: Buffer): DecodedWav {
+  if (
+    buffer.length < 44 ||
+    buffer.toString('ascii', 0, 4) !== 'RIFF' ||
+    buffer.toString('ascii', 8, 12) !== 'WAVE'
+  ) {
+    throw new Error('不是有效的 RIFF/WAVE 文件。');
+  }
+  let offset = 12;
+  let fmtOffset = -1;
+  let dataOffset = -1;
+  let dataSize = 0;
+  while (offset + 8 <= buffer.length) {
+    const id = buffer.toString('ascii', offset, offset + 4);
+    const size = buffer.readUInt32LE(offset + 4);
+    const body = offset + 8;
+    if (id === 'fmt ' && fmtOffset < 0) fmtOffset = body;
+    if (id === 'data') {
+      dataOffset = body;
+      dataSize = size;
+      break;
+    }
+    // chunk 按偶数字节对齐。
+    offset = body + size + (size % 2);
+  }
+  if (fmtOffset < 0 || fmtOffset + 16 > buffer.length) {
+    throw new Error('WAV 缺少有效的 fmt 块。');
+  }
+  const format = buffer.readUInt16LE(fmtOffset);
+  const channels = buffer.readUInt16LE(fmtOffset + 2);
+  const sampleRate = buffer.readUInt32LE(fmtOffset + 4);
+  const bits = buffer.readUInt16LE(fmtOffset + 14);
+  if (format !== 1 || bits !== 16) {
+    throw new Error(`只支持 PCM 16-bit WAV，实际 format=${format}、bits=${bits}。`);
+  }
+  if (channels < 1 || sampleRate <= 0) {
+    throw new Error('WAV 头里的声道数或采样率不合法。');
+  }
+  if (dataOffset < 0 || dataOffset > buffer.length) {
+    throw new Error('WAV 缺少 data 块。');
+  }
+
+  const usable = Math.max(0, Math.min(dataSize, buffer.length - dataOffset));
+  const count = Math.floor(usable / 2);
+  if (count === 0) throw new Error('WAV 的 data 块为空。');
+  const samples = new Int16Array(count);
+  for (let index = 0; index < count; index += 1) {
+    samples[index] = buffer.readInt16LE(dataOffset + index * 2);
+  }
+  return { samples, sampleRate, channels };
+}

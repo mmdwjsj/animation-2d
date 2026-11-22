@@ -7,8 +7,11 @@ import {
   type Viewport,
 } from '@animation/animation-core';
 import {
+  detectSubtitleLanguage,
   PROJECT_DEFAULTS,
   STAGE_VIEWPORT,
+  subtitleLineHeight,
+  wrapSubtitle,
   type Asset,
   type CharacterAsset,
   type StageScene,
@@ -305,6 +308,10 @@ export default function PixiStage(props: PixiStageProps) {
     x: sizeRef.current.width / 2,
     y: sizeRef.current.height / 2,
   };
+  // 字幕排版与导出共用 shared 规则：泰文按字素簇断行、行高更大。
+  const subtitle = frameState?.subtitle ?? null;
+  const subtitleLanguage = subtitle ? detectSubtitleLanguage(subtitle.text) : 'zh';
+  const subtitleLines = subtitle ? wrapSubtitle(subtitle.text, subtitleLanguage, 18) : [];
 
   return (
     <div
@@ -359,24 +366,32 @@ export default function PixiStage(props: PixiStageProps) {
       )}
 
       {/* 预览字幕：内容来自 getStateAtFrame，与 Remotion 导出共用同一帧状态。 */}
-      {frameState?.subtitle && (
+      {subtitle && (
         <div
           data-testid="subtitle-overlay"
           className="pointer-events-none absolute inset-x-0 bottom-16 flex justify-center px-8"
         >
           <div
-            className="max-w-[80%] rounded px-4 py-2 text-center text-sm leading-6 text-ink"
+            className="max-w-[80%] rounded px-4 py-2 text-center text-sm text-ink"
             style={{
               background: 'rgba(12,14,18,0.78)',
               border: '1px solid rgba(255,255,255,0.18)',
+              lineHeight: `${subtitleLineHeight(subtitleLanguage, 14)}px`,
+              fontFamily:
+                subtitleLanguage === 'th'
+                  ? '"Leelawadee UI", "Noto Sans Thai", "Tahoma", sans-serif'
+                  : undefined,
+              overflowWrap: 'anywhere',
             }}
           >
-            {frameState.subtitle.characterName && (
-              <span className="mr-1.5 text-xs text-muted">
-                {frameState.subtitle.characterName}：
+            {subtitleLines.map((line, index) => (
+              <span key={index} style={{ display: index === 0 ? 'inline' : 'block' }}>
+                {index === 0 && subtitle.characterName && (
+                  <span className="mr-1.5 text-xs text-muted">{subtitle.characterName}：</span>
+                )}
+                {line}
               </span>
-            )}
-            {frameState.subtitle.text}
+            ))}
           </div>
         </div>
       )}

@@ -7,9 +7,12 @@ import {
 } from '@animation/animation-core';
 import {
   audioAssetFileSchema,
+  detectSubtitleLanguage,
   PROJECT_DEFAULTS,
   resolutionById,
+  subtitleLineHeight,
   videoFrameToProjectFrame,
+  wrapSubtitle,
   type CharacterDescriptor,
   type RenderConfig,
   type RenderSceneSpan,
@@ -69,7 +72,14 @@ function toDataUri(content: Buffer): string {
 
 function sameSubtitle(a: SubtitleView | null, b: SubtitleView | null): boolean {
   if (a === null || b === null) return a === b;
-  return a.text === b.text && a.characterName === b.characterName;
+  return (
+    a.text === b.text &&
+    a.characterName === b.characterName &&
+    a.language === b.language &&
+    a.lineHeight === b.lineHeight &&
+    a.lines.length === b.lines.length &&
+    a.lines.every((line, index) => line === b.lines[index])
+  );
 }
 
 function sameLayer(a: RenderLayer, b: RenderLayer): boolean {
@@ -287,9 +297,19 @@ export function buildCompositionProps(options: BuildPropsOptions): BuildPropsRes
 
     // 道具与人物共用一条 zIndex 序列，与工作台预览的混合图层顺序一致。
     entries.sort((a, b) => a.zIndex - b.zIndex);
-    const subtitle: SubtitleView | null = state.subtitle
-      ? { text: state.subtitle.text, characterName: state.subtitle.characterName }
-      : null;
+    // 字幕排版在服务端预计算：泰文按字素簇断行、行高更大，Remotion 只绘制。
+    let subtitle: SubtitleView | null = null;
+    if (state.subtitle) {
+      const text = state.subtitle.text;
+      const language = detectSubtitleLanguage(text);
+      subtitle = {
+        text,
+        characterName: state.subtitle.characterName,
+        lines: wrapSubtitle(text, language, 18),
+        lineHeight: subtitleLineHeight(language, 36),
+        language,
+      };
+    }
     const visual: RenderFrameVisual = {
       background: prep.background,
       layers: entries.flatMap((entry) => entry.layers),

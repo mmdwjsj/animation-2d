@@ -5,16 +5,20 @@ import {
   audioAssetFileSchema,
   DRAFT_TIMING,
   PROJECT_DEFAULTS,
+  PROJECT_LANGUAGE_LABELS,
+  resolveDialogueLanguage,
   TTS_AUDIO,
   type AudioAsset,
   type AudioAssetFile,
   type DialogueEvent,
+  type ProjectLanguage,
   type StageData,
   type StageScene,
   type TtsGenerateRequest,
   type TtsGenerateResult,
   type TtsPlan,
   type TtsPlanRequest,
+  type TtsRoutingEntry,
 } from '@animation/shared';
 import { appConfig } from '../config';
 import { errors } from '../errors';
@@ -32,14 +36,22 @@ import type { TtsProviderRegistry, TtsSynthesisProvider, TtsSynthesisResult } fr
  * - 原始剧本、解析草稿、动画数据仍互不覆盖；
  * - plan 只读说明影响，generate 仅在 confirmed=true 时写回动画数据。
  *
- * 多场景：生成范围覆盖**全部场景**的对白，但时间轴串排按场景各自独立进行
- * （对白 startFrame 是场景内局部帧），保证多场景拼接导出时音频不会跨场景错位。
+ * 双语：每条对白按「显式 language > 舞台默认 language」求语言，再按语言路由
+ * 支持该语言的引擎与音色；角色可按语言覆盖音色。混排项目一次生成即可各走各的引擎。
+ * 多场景：生成范围覆盖**全部场景**的对白，但时间轴串排按场景各自独立进行。
  */
 
 /** 场景内的一条对白；带上所属场景，便于按场景独立串排与定位角色。 */
 interface DialogueTarget {
   scene: StageScene;
   dialogue: DialogueEvent;
+}
+
+interface RoutedParams {
+  provider: TtsSynthesisProvider;
+  voiceId: string;
+  speed: number;
+  language: ProjectLanguage;
 }
 
 function flattenDialogues(stage: StageData): DialogueTarget[] {
@@ -87,37 +99,48 @@ export class TtsService {
 
   /** 只读影响预览：不生成音频、不写盘、不改动动画数据。 */
   plan(projectId: string, request: TtsPlanRequest): TtsPlan {
-    const provider = this.providers.resolve(request.providerId);
-    const normalized = this.providers.normalize(provider, request.voiceId, request.speed);
     const stage = this.stages.getStage(projectId);
     if (stage.scenes.length === 0) {
       throw errors.validation('项目还没有场景，请先创建动画草稿。');
     }
-    // 覆盖全部场景；dialogueIds 存在时仍支持跨场景的单句重新生成。
-    const targets = this.selectDialogues(flattenDialogues(stage), request.dialogueIds);
+    // 覆盖全部场景；dialogueIds 与 language 都支持跨场景过滤。
+    const targets = this.selectTargets(stage, request);
     const assets = this.readAssetFile(projectId);
     const readyIds = new Set(
       assets.assets.filter((item) => item.status === 'ready').map((item) => item.id),
     );
 
-    const dialogues = targets.map(({ scene, dialogue }) => ({
-      dialogueId: dialogue.id,
-      sceneName: scene.name,
-      characterName:
-        scene.characters.find((item) => item.id === dialogue.characterId)?.name ?? '未绑定角色',
-      text: dialogue.text,
-      currentStartFrame: dialogue.startFrame,
-      currentDurationFrames: dialogue.durationFrames,
-      manuallyTimed: Boolean(dialogue.manuallyTimed),
-      hasAudio: Boolean(dialogue.audioAssetId && readyIds.has(dialogue.audioAssetId)),
-    }));
+    const dialogues = targets.map(({ scene, dialogue }) => {
+      const routed = this.resolveForDialogue(scene, dialogue, stage.language, request);
+      return {
+        dialogueId: dialogue.id,
+        sceneName: scene.name,
+        characterName:
+          scene.characters.find((item) => item.id === dialogue.characterId)?.name ?? '未绑定角色',
+        text: dialogue.text,
+        language: routed.language,
+        providerId: routed.provider.descriptor.id,
+        voiceId: routed.voiceId,
+        currentStartFrame: dialogue.startFrame,
+        currentDurationFrames: dialogue.durationFrames,
+        manuallyTimed: Boolean(dialogue.manuallyTimed),
+        hasAudio: Boolean(dialogue.audioAssetId && readyIds.has(dialogue.audioAssetId)),
+      };
+    });
+    const routing = this.buildRouting(dialogues);
+    const primary = dialogues[0];
+    const fallbackProvider = this.providers.resolve(request.providerId);
     const protectedCount = dialogues.filter((item) => item.manuallyTimed).length;
     const firstScene = stage.scenes[0];
 
     return {
-      providerId: provider.descriptor.id,
-      voiceId: normalized.voiceId,
-      speed: normalized.speed,
+      providerId: primary?.providerId ?? fallbackProvider.descriptor.id,
+      voiceId: primary?.voiceId ?? fallbackProvider.descriptor.defaultVoiceId,
+      speed: primary ? this.providers.normalize(
+        this.providers.resolve(primary.providerId), primary.voiceId, request.speed, primary.language,
+      ).speed : this.providers.normalize(fallbackProvider, undefined, request.speed).speed,
+      ...(request.language ? { language: request.language } : {}),
+      routing,
       targetCount: dialogues.length,
       dialogues,
       protectedCount,
@@ -128,7 +151,7 @@ export class TtsService {
         (total, scene) => total + sceneDurationFrames(scene),
         0,
       ),
-      warning: this.warningText(protectedCount, stage.scenes.length),
+      warning: this.warningText(protectedCount, stage.scenes.length, routing),
     };
   }
 
@@ -136,22 +159,20 @@ export class TtsService {
    * 生成配音并回写真实时长。confirmed 由共享 Schema 强制为 true；
    * 单句失败只跳过该句，不阻断其他对白（PRD 13「每句独立生成」）。
    */
-  generate(projectId: string, request: TtsGenerateRequest): TtsGenerateResult {
+  async generate(projectId: string, request: TtsGenerateRequest): Promise<TtsGenerateResult> {
     const dir = this.projectDir(projectId);
-    const provider = this.providers.resolve(request.providerId);
-    const normalized = this.providers.normalize(provider, request.voiceId, request.speed);
     const stage = this.stages.getStage(projectId);
     if (stage.scenes.length === 0) {
       throw errors.validation('项目还没有场景，请先创建动画草稿。');
     }
-    const targets = this.selectDialogues(flattenDialogues(stage), request.dialogueIds);
+    const targets = this.selectTargets(stage, request);
     if (targets.length === 0) {
       const first = stage.scenes[0];
       return {
         stage,
         audio: this.readAssetFile(projectId),
         generated: [],
-        skipped: [{ dialogueId: '-', reason: '项目中没有可生成配音的对白。' }],
+        skipped: [{ dialogueId: '-', reason: '项目中没有符合当前语言筛选的可生成对白。' }],
         sceneDurationFrames: first ? sceneDurationFrames(first) : 0,
       };
     }
@@ -171,14 +192,16 @@ export class TtsService {
     );
 
     for (const [index, { scene, dialogue }] of targets.entries()) {
-      const params = this.resolveParams(provider, scene, dialogue, normalized);
       let synthesis: TtsSynthesisResult | undefined;
+      let routed: RoutedParams | undefined;
       try {
-        synthesis = params.provider.synthesize({
+        routed = this.resolveForDialogue(scene, dialogue, stage.language, request);
+        synthesis = await routed.provider.synthesize({
           text: dialogue.text,
-          voiceId: params.voiceId,
-          speed: params.speed,
+          voiceId: routed.voiceId,
+          speed: routed.speed,
           fps: PROJECT_DEFAULTS.fps,
+          language: routed.language,
         });
       } catch (cause) {
         skipped.push({
@@ -209,9 +232,10 @@ export class TtsService {
         sampleRate: synthesis.sampleRate,
         channels: synthesis.channels,
         format: synthesis.format,
-        providerId: params.provider.descriptor.id,
-        voiceId: params.voiceId,
-        speed: params.speed,
+        providerId: routed.provider.descriptor.id,
+        voiceId: routed.voiceId,
+        speed: routed.speed,
+        language: routed.language,
         sourceDialogueId: dialogue.id,
         textHash: synthesis.textHash,
         createdAt: new Date().toISOString(),
@@ -242,6 +266,7 @@ export class TtsService {
         durationMs: synthesis.durationMs,
         durationFrames,
         startFrame: dialogue.startFrame,
+        language: routed.language,
       });
     }
 
@@ -317,20 +342,89 @@ export class TtsService {
     });
   }
 
-  /** 角色级音色 / 语速覆盖通用参数；引擎由 Provider 注册表全局决定。 */
-  private resolveParams(
-    defaultProvider: TtsSynthesisProvider,
+  /**
+   * 单句路由：语言 → 支持该语言的引擎 → 该语言的音色 → 语速夹取。
+   * 用户全局音色与角色通用音色若属于别的语言会被忽略（不静默错配），
+   * 角色按语言覆盖优先；引擎不支持该语言时明确报错，由调用方按句跳过。
+   */
+  private resolveForDialogue(
     scene: StageScene,
     dialogue: DialogueEvent,
-    base: { voiceId: string; speed: number },
-  ): { provider: TtsSynthesisProvider; voiceId: string; speed: number } {
+    stageLanguage: ProjectLanguage,
+    request: TtsPlanRequest,
+  ): RoutedParams {
+    const language = resolveDialogueLanguage(dialogue.language, stageLanguage);
+    const provider = this.providers.resolveFor(language, request.providerId);
+    const voices = provider.descriptor.voices;
+    // 用户明确指定的音色若根本不存在，必须报错，不能静默忽略（PRD 13）。
+    if (
+      request.voiceId &&
+      !this.providers
+        .list()
+        .some((descriptor) => descriptor.voices.some((voice) => voice.id === request.voiceId))
+    ) {
+      throw errors.tts(`声音「${request.voiceId}」不属于当前 TTS 引擎。`);
+    }
+    const usable = (voiceId?: string): string | undefined =>
+      voiceId && voices.some((voice) => voice.id === voiceId && voice.language === language)
+        ? voiceId
+        : undefined;
+
+    // 优先级：角色按语言覆盖 > 角色通用覆盖 > 用户全局选择 > 引擎语言默认。
+    // 全局音色若属于另一种语言则忽略，保证混排项目不会把中文音色套到泰语对白上。
     const character = scene.characters.find((item) => item.id === dialogue.characterId);
-    const normalized = this.providers.normalize(
-      defaultProvider,
-      character?.voiceId ?? base.voiceId,
-      character?.speed ?? base.speed,
+    const voiceId =
+      usable(character?.voiceByLanguage?.[language]) ??
+      usable(character?.voiceId) ??
+      usable(request.voiceId) ??
+      this.providers.defaultVoiceFor(provider, language);
+    const speed = character?.speed ?? request.speed ?? provider.descriptor.defaultSpeed;
+    const normalized = this.providers.normalize(provider, voiceId, speed, language);
+    return {
+      provider,
+      voiceId: normalized.voiceId,
+      speed: normalized.speed,
+      language,
+    };
+  }
+
+  /** 按「语言 + 引擎 + 音色」汇总路由明细，供前端展示双语配音方案。 */
+  private buildRouting(
+    dialogues: ReadonlyArray<{
+      language: ProjectLanguage;
+      providerId: string;
+      voiceId: string;
+    }>,
+  ): TtsRoutingEntry[] {
+    const groups = new Map<string, TtsRoutingEntry>();
+    for (const item of dialogues) {
+      const key = `${item.language}|${item.providerId}|${item.voiceId}`;
+      const existing = groups.get(key);
+      if (existing) {
+        existing.count += 1;
+        continue;
+      }
+      const provider = this.providers.resolve(item.providerId);
+      const voice = provider.descriptor.voices.find((entry) => entry.id === item.voiceId);
+      groups.set(key, {
+        language: item.language,
+        providerId: item.providerId,
+        providerName: provider.descriptor.name,
+        voiceId: item.voiceId,
+        voiceName: voice?.name ?? item.voiceId,
+        count: 1,
+      });
+    }
+    return [...groups.values()];
+  }
+
+  private selectTargets(stage: StageData, request: TtsPlanRequest): DialogueTarget[] {
+    const all = flattenDialogues(stage);
+    const selected = this.selectDialogues(all, request.dialogueIds);
+    if (!request.language) return selected;
+    return selected.filter(
+      ({ dialogue }) => resolveDialogueLanguage(dialogue.language, stage.language) === request.language,
     );
-    return { provider: defaultProvider, ...normalized };
   }
 
   private selectDialogues(
@@ -392,8 +486,21 @@ export class TtsService {
     return dir;
   }
 
-  private warningText(protectedCount: number, sceneCount: number): string {
+  private warningText(
+    protectedCount: number,
+    sceneCount: number,
+    routing: readonly TtsRoutingEntry[],
+  ): string {
+    const routingText = routing.length
+      ? `本次按语言路由：${routing
+          .map(
+            (item) =>
+              `${PROJECT_LANGUAGE_LABELS[item.language]} ${item.count} 句 → ${item.providerName} / ${item.voiceName}`,
+          )
+          .join('；')}。`
+      : '本次没有可生成配音的对白。';
     return [
+      routingText,
       `生成后按音频真实时长重设对白时长：向上取整并追加 ${TTS_AUDIO.tailFrames} 帧余量，保证配音不会被提前截断。`,
       `未手动调整的对白会按新时长重新串排；${protectedCount > 0 ? `其中 ${protectedCount} 句已手动调整时间，起始位置不会被自动移动，时长只延长不缩短。` : '当前没有手动调整过的对白。'}`,
       `重新生成会创建新音频资产并更新引用，旧文件保留但标记为已替换，不会留下悬空引用。本次按场景顺序处理全部 ${sceneCount} 个场景，各场景分别串排时间轴，多场景导出时配音不会跨场景错位。`,

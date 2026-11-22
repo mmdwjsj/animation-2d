@@ -1,8 +1,11 @@
-import type {
-  TtsGeneratedItem,
-  TtsGenerateResult,
-  TtsPlan,
-  TtsProvider,
+import {
+  PROJECT_LANGUAGES,
+  PROJECT_LANGUAGE_LABELS,
+  type ProjectLanguage,
+  type TtsGeneratedItem,
+  type TtsGenerateResult,
+  type TtsPlan,
+  type TtsProvider,
 } from '@animation/shared';
 import { useEffect, useMemo, useState } from 'react';
 import Button from '../../components/Button';
@@ -10,11 +13,14 @@ import Modal from '../../components/Modal';
 import { audioFileUrl, getErrorMessage, ttsApi } from '../../lib/api';
 
 /**
- * 生成配音弹窗（PRD 7.2 / 12.3 / 13）。
+ * 生成配音弹窗（PRD 7.2 / 12.3 / 13，双语扩展）。
  *
  * 流程严格遵循「先预览影响 → 用户确认 → 才写动画数据」：
  * 打开时只调用只读的 plan，confirmed 由前端在点击生成时唯一附加。
- * UI 只展示通用参数（引擎 / 声音 / 语速），厂商差异封装在服务端 Provider。
+ * UI 只展示通用参数（语言 / 引擎 / 声音 / 语速），厂商差异封装在服务端 Provider。
+ *
+ * 默认「按语言自动路由」：不指定引擎，服务端按每句对白语言选择支持该语言的
+ * 引擎与该语言默认音色；用户也可显式指定引擎与音色，并可限定只生成某一种语言。
  */
 interface TtsDialogProps {
   open: boolean;
@@ -32,8 +38,11 @@ export default function TtsDialog({
   onClose,
   onGenerated,
 }: TtsDialogProps) {
+  /** 空字符串 = 按语言自动路由；非空 = 用户显式指定引擎。 */
   const [providerId, setProviderId] = useState('');
   const [voiceId, setVoiceId] = useState('');
+  /** 空字符串 = 全部语言；否则只生成指定语言的对白。 */
+  const [language, setLanguage] = useState<ProjectLanguage | ''>('');
   const [speed, setSpeed] = useState(1);
   const [plan, setPlan] = useState<TtsPlan | null>(null);
   const [planError, setPlanError] = useState<string | null>(null);
@@ -45,29 +54,45 @@ export default function TtsDialog({
   const [skipped, setSkipped] = useState<Array<{ dialogueId: string; reason: string }>>([]);
   const [generated, setGenerated] = useState(false);
 
-  const provider = useMemo(
-    () => providers.find((item) => item.id === providerId) ?? providers[0] ?? null,
+  const explicitProvider = useMemo(
+    () => providers.find((item) => item.id === providerId) ?? null,
     [providers, providerId],
   );
+  const speedProvider = explicitProvider ?? providers[0] ?? null;
 
-  // 首次拿到 Provider 列表时初始化通用参数。
+  // 显式选择引擎后，把音色初始化为该引擎的默认值。
   useEffect(() => {
-    if (!provider) return;
-    if (!providerId) setProviderId(provider.id);
-    if (!voiceId || !provider.voices.some((voice) => voice.id === voiceId)) {
-      setVoiceId(provider.defaultVoiceId);
+    if (!explicitProvider) return;
+    if (!voiceId || !explicitProvider.voices.some((voice) => voice.id === voiceId)) {
+      setVoiceId(explicitProvider.defaultVoiceId);
     }
-    if (speed === 1 && provider.defaultSpeed !== 1) setSpeed(provider.defaultSpeed);
-  }, [provider, providerId, voiceId, speed]);
+  }, [explicitProvider, voiceId]);
+
+  useEffect(() => {
+    if (speedProvider && speed === 1 && speedProvider.defaultSpeed !== 1) {
+      setSpeed(speedProvider.defaultSpeed);
+    }
+  }, [speedProvider, speed]);
+
+  /** 请求参数：自动路由时省略 providerId / voiceId，交由服务端按语言决定。 */
+  const params = useMemo(
+    () => ({
+      ...(providerId ? { providerId } : {}),
+      ...(language ? { language: language as ProjectLanguage } : {}),
+      ...(providerId && voiceId ? { voiceId } : {}),
+      speed,
+    }),
+    [providerId, language, voiceId, speed],
+  );
 
   // 参数或打开状态变化时重新做只读影响预览，绝不在此写盘。
   useEffect(() => {
-    if (!open || !provider || !voiceId) return;
+    if (!open) return;
     let cancelled = false;
     setPlanning(true);
     setPlanError(null);
     void ttsApi
-      .plan(projectId, { providerId: provider.id, voiceId, speed })
+      .plan(projectId, params)
       .then((next) => {
         if (!cancelled) setPlan(next);
       })
@@ -80,7 +105,7 @@ export default function TtsDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, projectId, provider, voiceId, speed]);
+  }, [open, projectId, params]);
 
   const applyResult = (result: TtsGenerateResult) => {
     onGenerated(result);
@@ -95,16 +120,13 @@ export default function TtsDialog({
   };
 
   const generate = async (dialogueIds?: string[]) => {
-    if (!provider) return;
     setError(null);
     if (dialogueIds) setRegeneratingId(dialogueIds[0]);
     else setGenerating(true);
     try {
       const result = await ttsApi.generate({
         projectId,
-        providerId: provider.id,
-        voiceId,
-        speed,
+        ...params,
         ...(dialogueIds ? { dialogueIds } : {}),
       });
       applyResult(result);
@@ -116,9 +138,10 @@ export default function TtsDialog({
     }
   };
 
-  const activeVoices = provider?.voices ?? [];
-  const minSpeed = provider?.minSpeed ?? 0.5;
-  const maxSpeed = provider?.maxSpeed ?? 2;
+  const activeVoices = explicitProvider?.voices ?? [];
+  const minSpeed = speedProvider?.minSpeed ?? 0.5;
+  const maxSpeed = speedProvider?.maxSpeed ?? 2;
+  const autoRoute = !explicitProvider;
 
   return (
     <Modal
@@ -145,21 +168,39 @@ export default function TtsDialog({
         {/* 通用参数：不含任何厂商专有字段 */}
         <section className="rounded border border-line bg-page px-4 py-3">
           <h3 className="mb-3 text-xs font-semibold text-ink">配音设置</h3>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block">
+              <span className="mb-1 block text-[11px] text-muted">配音语言</span>
+              <select
+                aria-label="配音语言"
+                data-testid="tts-language"
+                className="field-input w-full"
+                value={language}
+                onChange={(event) => setLanguage(event.target.value as ProjectLanguage | '')}
+              >
+                <option value="">全部语言（按对白语言分别路由）</option>
+                {PROJECT_LANGUAGES.map((item) => (
+                  <option key={item} value={item}>
+                    仅{PROJECT_LANGUAGE_LABELS[item]}
+                  </option>
+                ))}
+              </select>
+            </label>
             <label className="block">
               <span className="mb-1 block text-[11px] text-muted">TTS 引擎</span>
               <select
                 aria-label="TTS 引擎"
                 className="field-input w-full"
-                value={provider?.id ?? ''}
+                value={providerId}
                 onChange={(event) => {
                   setProviderId(event.target.value);
                   setVoiceId('');
                 }}
               >
+                <option value="">自动（按语言路由）</option>
                 {providers.map((item) => (
                   <option key={item.id} value={item.id}>
-                    {item.name}
+                    {item.name}（{item.languages.map((lang) => PROJECT_LANGUAGE_LABELS[lang]).join('/')}）
                   </option>
                 ))}
               </select>
@@ -169,14 +210,27 @@ export default function TtsDialog({
               <select
                 aria-label="配音声音"
                 className="field-input w-full"
-                value={voiceId}
+                value={autoRoute ? '' : voiceId}
+                disabled={autoRoute}
                 onChange={(event) => setVoiceId(event.target.value)}
               >
-                {activeVoices.map((voice) => (
-                  <option key={voice.id} value={voice.id}>
-                    {voice.name}
-                  </option>
-                ))}
+                {autoRoute ? (
+                  <option value="">按语言自动选择各引擎默认音色</option>
+                ) : (
+                  PROJECT_LANGUAGES.map((lang) => {
+                    const voices = activeVoices.filter((voice) => voice.language === lang);
+                    if (voices.length === 0) return null;
+                    return (
+                      <optgroup key={lang} label={PROJECT_LANGUAGE_LABELS[lang]}>
+                        {voices.map((voice) => (
+                          <option key={voice.id} value={voice.id}>
+                            {voice.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                    );
+                  })
+                )}
               </select>
             </label>
             <label className="block">
@@ -195,10 +249,42 @@ export default function TtsDialog({
               />
             </label>
           </div>
-          {provider && (
-            <p className="mt-2 text-[11px] leading-5 text-muted">{provider.description}</p>
-          )}
+          <p className="mt-2 text-[11px] leading-5 text-muted">
+            {explicitProvider
+              ? explicitProvider.description
+              : '自动路由：每条对白按自身语言选择支持该语言的引擎与默认音色；中泰混排项目一次生成即可各走各的引擎。角色可在右侧属性面板按语言覆盖音色。'}
+          </p>
         </section>
+
+        {/* 按语言路由明细 */}
+        {plan && plan.routing.length > 0 && (
+          <section
+            data-testid="tts-routing"
+            className="rounded border border-line bg-page px-4 py-3"
+          >
+            <h3 className="mb-2 text-xs font-semibold text-ink">
+              按语言路由（{plan.routing.length} 条）
+            </h3>
+            <div className="space-y-1">
+              {plan.routing.map((item) => (
+                <div
+                  key={`${item.language}-${item.providerId}-${item.voiceId}`}
+                  data-testid="tts-routing-entry"
+                  data-language={item.language}
+                  className="flex items-center gap-2 rounded bg-subtle px-2 py-1.5 text-[11px]"
+                >
+                  <span className="shrink-0 rounded bg-elevated px-1.5 py-0.5 text-accent">
+                    {PROJECT_LANGUAGE_LABELS[item.language]}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-ink">
+                    {item.providerName} / {item.voiceName}
+                  </span>
+                  <span className="shrink-0 tabular-nums text-muted">{item.count} 句</span>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* 只读影响预览 */}
         <section data-testid="tts-plan" className="rounded border border-line bg-page px-4 py-3">
@@ -239,6 +325,7 @@ export default function TtsDialog({
                   <div
                     key={dialogue.dialogueId}
                     data-testid="tts-plan-dialogue"
+                    data-language={dialogue.language ?? ''}
                     className="flex items-center gap-2 rounded bg-subtle px-2 py-1.5 text-[11px]"
                   >
                     {dialogue.sceneName ? (
@@ -249,6 +336,11 @@ export default function TtsDialog({
                         {dialogue.sceneName}
                       </span>
                     ) : null}
+                    {dialogue.language && (
+                      <span className="shrink-0 rounded bg-elevated px-1.5 py-0.5 text-[10px] text-accent">
+                        {PROJECT_LANGUAGE_LABELS[dialogue.language]}
+                      </span>
+                    )}
                     <span className="w-14 shrink-0 text-ink">{dialogue.characterName}</span>
                     <span className="min-w-0 flex-1 truncate text-muted">{dialogue.text}</span>
                     <span
@@ -293,6 +385,7 @@ export default function TtsDialog({
                   data-testid="tts-generated-item"
                   data-dialogue-id={item.dialogueId}
                   data-duration-ms={item.durationMs}
+                  data-language={item.language ?? ''}
                   className="rounded bg-subtle px-3 py-2"
                 >
                   <div className="flex items-center gap-2">

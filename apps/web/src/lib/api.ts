@@ -6,6 +6,7 @@ import type {
   DraftImpact,
   DraftMatch,
   Project,
+  ProjectLanguage,
   RenderJob,
   RenderRequest,
   RenderScope,
@@ -168,7 +169,13 @@ export const ttsApi = {
   },
   plan: async (
     projectId: string,
-    params: { providerId: string; voiceId?: string; speed?: number; dialogueIds?: string[] },
+    params: {
+      providerId?: string;
+      language?: ProjectLanguage;
+      voiceId?: string;
+      speed?: number;
+      dialogueIds?: string[];
+    },
   ): Promise<TtsPlan> => {
     const result = await request<{ data: TtsPlan }>(
       `/api/projects/${encodeURIComponent(projectId)}/tts/plan`,
@@ -178,7 +185,8 @@ export const ttsApi = {
   },
   generate: async (params: {
     projectId: string;
-    providerId: string;
+    providerId?: string;
+    language?: ProjectLanguage;
     voiceId?: string;
     speed?: number;
     dialogueIds?: string[];

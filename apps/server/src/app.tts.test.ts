@@ -96,7 +96,12 @@ describe('TTS Provider 与影响预览 API', () => {
     const providers = response.json().data.providers;
     expect(providers).toHaveLength(1);
     expect(providers[0].id).toBe('local-tone');
-    expect(providers[0].voices).toHaveLength(3);
+    expect(providers[0].voices).toHaveLength(6);
+    expect(providers[0].languages).toEqual(['zh', 'th']);
+    expect(providers[0].defaultVoiceByLanguage).toEqual({
+      zh: 'voice-warm',
+      th: 'voice-thai-warm',
+    });
     expect(Object.keys(providers[0])).not.toContain('apiKey');
   });
 

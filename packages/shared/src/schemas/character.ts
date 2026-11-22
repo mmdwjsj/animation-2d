@@ -161,8 +161,18 @@ export const characterInstanceSchema = z.object({
   mouthState: z.enum(MOUTH_VALUES).default('closed'),
   visible: z.boolean().default(true),
   zIndex: z.number().int().nonnegative().max(10000),
-  /** 阶段 7：角色级音色覆盖。引擎由 Provider 注册表全局决定，参数差异不散落到 UI。 */
+  /** 阶段 7：角色级音色覆盖（不区分语言时的通用值）。 */
   voiceId: z.string().min(1).max(80).optional(),
+  /**
+   * 角色按语言的音色覆盖：中泰双语项目里同一角色可分别指定音色。
+   * 优先级高于通用 voiceId，也高于 Provider 的语言默认音色。
+   */
+  voiceByLanguage: z
+    .object({
+      zh: z.string().min(1).max(80).optional(),
+      th: z.string().min(1).max(80).optional(),
+    })
+    .optional(),
   speed: z.number().positive().optional(),
 });
 export type CharacterInstance = z.infer<typeof characterInstanceSchema>;

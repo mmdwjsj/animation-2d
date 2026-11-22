@@ -56,7 +56,13 @@ describe('assetIndexSchema', () => {
 describe('stageDataSchema 向后兼容', () => {
   it('能解析阶段 1 写入的 { projectId, scenes: [] }', () => {
     const parsed = stageDataSchema.parse({ projectId: PROJECT_ID, scenes: [] });
-    expect(parsed).toEqual({ projectId: PROJECT_ID, version: 0, activeSceneId: null, scenes: [] });
+    expect(parsed).toEqual({
+      projectId: PROJECT_ID,
+      version: 0,
+      activeSceneId: null,
+      language: 'zh',
+      scenes: [],
+    });
   });
 
   it('拒绝非法 projectId', () => {

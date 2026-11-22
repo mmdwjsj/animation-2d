@@ -19,6 +19,7 @@ import { ProjectService } from './services/projectService';
 import { ScriptService } from './services/scriptService';
 import { StageService } from './services/stageService';
 import { LocalToneProvider } from './services/tts/localToneProvider';
+import { loadConfiguredTtsProviders } from './services/tts/loadConfiguredProviders';
 import { TtsProviderRegistry } from './services/tts/provider';
 import { TtsService } from './services/ttsService';
 import { RenderService } from './render/renderService';
@@ -42,8 +43,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   const stageService = new StageService(assetService, path.join(dataDir, 'projects'));
   const scriptService = new ScriptService(path.join(dataDir, 'projects'));
   const draftService = new DraftImportService(assetService, stageService);
-  // 阶段 7：注册表是唯一扩展点，新增 TTS 服务只需在这里 register 一个 Provider。
-  const ttsProviders = new TtsProviderRegistry([new LocalToneProvider()]);
+  // 阶段 7 / 双语：注册表是唯一扩展点。外部引擎仅由配置显式加载并优先注册，
+  // 本地离线音色始终保留为显式可选的最后兜底，不会静默顶替真实引擎。
+  const ttsProviders = new TtsProviderRegistry([
+    ...loadConfiguredTtsProviders(),
+    new LocalToneProvider(),
+  ]);
   const ttsService = new TtsService(ttsProviders, stageService, path.join(dataDir, 'projects'));
   // 阶段 8：导出任务元数据存 SQLite，成品 MP4 落项目 renders/。
   const renderService = new RenderService({

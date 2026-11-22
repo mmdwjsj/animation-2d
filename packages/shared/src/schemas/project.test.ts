@@ -15,6 +15,7 @@ const validProject = {
   width: 1080,
   height: 1920,
   aspectRatio: '9:16',
+  language: 'zh',
   sceneIds: [],
   createdAt: '2026-11-22T08:00:00.000Z',
   updatedAt: '2026-11-22T08:00:00.000Z',
@@ -66,8 +67,14 @@ describe('默认项目数据文件', () => {
       projectId: validProject.id,
       version: 0,
       activeSceneId: null,
+      language: 'zh',
       scenes: [],
     });
+  });
+
+  it('旧项目缺 language 时自动补为中文', () => {
+    expect(projectSchema.parse({ ...validProject, language: undefined }).language).toBe('zh');
+    expect(projectSchema.parse({ ...validProject, language: 'th' }).language).toBe('th');
   });
 
   it('默认值常量与 schema 一致', () => {

@@ -1,4 +1,6 @@
 export * from './constants';
+export * from './subtitle';
+export * from './schemas/language';
 export * from './schemas/project';
 export * from './schemas/asset';
 export * from './schemas/character';

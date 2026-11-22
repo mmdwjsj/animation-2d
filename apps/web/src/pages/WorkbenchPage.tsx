@@ -1,4 +1,11 @@
-import { AUTOSAVE_DELAY_MS, type StageObject, type TtsGenerateResult } from '@animation/shared';
+import {
+  AUTOSAVE_DELAY_MS,
+  PROJECT_LANGUAGES,
+  PROJECT_LANGUAGE_LABELS,
+  type ProjectLanguage,
+  type StageObject,
+  type TtsGenerateResult,
+} from '@animation/shared';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import Button from '../components/Button';
@@ -59,6 +66,7 @@ export default function WorkbenchPage() {
   const limitNotice = useStageStore((state) => state.limitNotice);
   const select = useStageStore((state) => state.select);
   const setActiveScene = useStageStore((state) => state.setActiveScene);
+  const setLanguage = useStageStore((state) => state.setLanguage);
   const addScene = useStageStore((state) => state.addScene);
   const duplicateScene = useStageStore((state) => state.duplicateScene);
   const updateScene = useStageStore((state) => state.updateScene);
@@ -365,6 +373,26 @@ export default function WorkbenchPage() {
         </div>
 
         <div className="ml-auto flex items-center gap-2">
+          <label className="flex items-center gap-1.5 text-[11px] text-muted">
+            项目语言
+            <select
+              aria-label="项目语言"
+              data-testid="project-language"
+              className="field-input h-8 py-0 text-xs"
+              value={stage?.language ?? 'zh'}
+              onChange={(event) => {
+                setLanguage(event.target.value as ProjectLanguage);
+                // 语言会被服务端的配音路由与字幕排版读取，立即落盘不等防抖。
+                commitSceneChange();
+              }}
+            >
+              {PROJECT_LANGUAGES.map((item) => (
+                <option key={item} value={item}>
+                  {PROJECT_LANGUAGE_LABELS[item]}
+                </option>
+              ))}
+            </select>
+          </label>
           <Button
             title="从第 0 帧开始播放预览（阶段 6 确定性帧状态）"
             onClick={() => {

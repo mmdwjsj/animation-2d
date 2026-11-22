@@ -101,18 +101,27 @@ const SceneVisual: FC<SceneVisualProps> = ({
               borderRadius: 12,
               padding: '14px 32px',
               color: '#F5F7FA',
-              fontFamily: '"Microsoft YaHei", "PingFang SC", sans-serif',
+              fontFamily:
+                visual.subtitle.language === 'th'
+                  ? '"Leelawadee UI", "Noto Sans Thai", "Tahoma", sans-serif'
+                  : '"Microsoft YaHei", "PingFang SC", sans-serif',
               fontSize: 36,
-              lineHeight: 1.5,
+              lineHeight: `${visual.subtitle.lineHeight}px`,
               textAlign: 'center',
+              overflowWrap: 'anywhere',
             }}
           >
-            {visual.subtitle.characterName ? (
-              <span style={{ marginRight: 8, fontSize: 28, color: '#9AA3B2' }}>
-                {visual.subtitle.characterName}：
+            {/* 断行由服务端预计算，这里只绘制；第一行与角色名同行。 */}
+            {visual.subtitle.lines.map((line, index) => (
+              <span key={index} style={{ display: index === 0 ? 'inline' : 'block' }}>
+                {index === 0 && visual.subtitle?.characterName ? (
+                  <span style={{ marginRight: 8, fontSize: 28, color: '#9AA3B2' }}>
+                    {visual.subtitle.characterName}：
+                  </span>
+                ) : null}
+                {line}
               </span>
-            ) : null}
-            {visual.subtitle.text}
+            ))}
           </div>
         </div>
       ) : null}

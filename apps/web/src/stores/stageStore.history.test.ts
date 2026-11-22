@@ -15,6 +15,7 @@ function makeStage(): StageData {
     projectId: PROJECT_ID,
     version: 7,
     activeSceneId: 'scene-1',
+    language: 'zh',
     scenes: [
       {
         id: 'scene-1',
@@ -393,5 +394,29 @@ describe('工作台场景切换', () => {
     expect(state().stage?.activeSceneId).toBe('scene-1');
     expect(state().saveStatus).toBe('dirty');
     expect(state().historyPast).toHaveLength(0);
+  });
+});
+
+describe('项目默认语言切换', () => {
+  it('旧舞台默认中文，切到泰语后标记 dirty 并可撤销 / 重做', () => {
+    useStageStore.setState({ stage: makeStage() });
+    expect(state().stage?.language).toBe('zh');
+    state().setLanguage('th');
+    expect(state().stage?.language).toBe('th');
+    expect(state().saveStatus).toBe('dirty');
+    expect(state().historyPast).toHaveLength(1);
+    state().undo();
+    expect(state().stage?.language).toBe('zh');
+    state().redo();
+    expect(state().stage?.language).toBe('th');
+  });
+
+  it('设置为相同语言不产生历史，也不改写保存状态', () => {
+    useStageStore.setState({ stage: makeStage() });
+    const before = state().stage;
+    state().setLanguage('zh');
+    expect(state().stage).toBe(before);
+    expect(state().historyPast).toHaveLength(0);
+    expect(state().saveStatus).toBe('saved');
   });
 });

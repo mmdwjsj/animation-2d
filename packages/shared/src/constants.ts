@@ -10,6 +10,27 @@ export const PROJECT_DEFAULTS = {
   aspectRatio: '9:16',
 } as const;
 
+/**
+ * 项目与对白语言：中文、泰语并列为第一版一等公民（双语 TTS 层适配）。
+ * 语言只影响配音引擎/音色路由与字幕排版，不改变确定性剧本解析规则。
+ */
+export const PROJECT_LANGUAGES = ['zh', 'th'] as const;
+export type ProjectLanguage = (typeof PROJECT_LANGUAGES)[number];
+export const DEFAULT_PROJECT_LANGUAGE: ProjectLanguage = 'zh';
+export const PROJECT_LANGUAGE_LABELS: Record<ProjectLanguage, string> = {
+  zh: '中文',
+  th: '泰语',
+};
+
+/**
+ * 字幕排版：泰文含上下标元音与声调符号，字面高度明显大于中文，
+ * 且没有空格分词，因此行高更大、断行按字符簇而非空格。
+ */
+export const SUBTITLE_TYPOGRAPHY = {
+  zh: { lineHeightRatio: 1.28, maxLines: 3, wrapBy: 'character' },
+  th: { lineHeightRatio: 1.58, maxLines: 3, wrapBy: 'cluster' },
+} as const;
+
 export const MAX_CHARACTERS_PER_SCENE = 4;
 
 export const POSTURE_VALUES = ['standing', 'sitting'] as const;

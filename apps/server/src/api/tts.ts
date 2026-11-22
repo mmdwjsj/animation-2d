@@ -45,7 +45,7 @@ export function registerTtsRoutes(app: FastifyInstance, tts: TtsService): void {
   /** 生成配音并回写真实时长；未确认时 Schema 直接拒绝，绝不隐式覆盖。 */
   app.post('/api/tts/generate', async (request) => {
     const parsed = parseGenerate(request.body);
-    return { data: tts.generate(parsed.projectId, parsed) };
+    return { data: await tts.generate(parsed.projectId, parsed) };
   });
 }
 

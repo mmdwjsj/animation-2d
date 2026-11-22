@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { PROJECT_DEFAULTS } from '../constants';
+import { DEFAULT_PROJECT_LANGUAGE, PROJECT_DEFAULTS } from '../constants';
+import { projectLanguageSchema } from './language';
 
 /** 项目名称规则：创建、重命名、保存共用，避免规则漂移。 */
 export const projectNameSchema = z
@@ -20,6 +21,8 @@ export const projectSchema = z.object({
   width: z.literal(PROJECT_DEFAULTS.width),
   height: z.literal(PROJECT_DEFAULTS.height),
   aspectRatio: z.literal(PROJECT_DEFAULTS.aspectRatio),
+  /** 项目默认语言：对白未显式指定语言时继承，旧数据缺省为中文。 */
+  language: projectLanguageSchema.default(DEFAULT_PROJECT_LANGUAGE),
   sceneIds: z.array(z.string()),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),

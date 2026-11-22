@@ -1,0 +1,60 @@
+{
+  "note": "默认不加载：只有设置环境变量 ANIMATION_TTS_PROVIDERS_FILE 指向本文件时，服务端才会注册 providers 里的外部引擎；未加载时项目保持纯离线（仅本地音色）。密钥不要写进本文件，env 值用 {env:VAR_NAME} 从进程环境读取。路径请按本机实际情况修改。泰语侧使用本机 Kokoro Thai ONNX（完全离线）；中文侧要真人语音时，把 disabledProviders 里的 edge-tts 配置移入 providers，并先给选中的 Python 安装 edge-tts —— 该引擎会把台词发到微软公网服务，必须经用户明确同意后启用（AGENTS.md 第 10 节）。未配置中文真人引擎时，中文对白由本地离线音色生成可播放的提示音，不会伪造人声。",
+  "providers": [
+    {
+      "id": "kokoro-thai-local",
+      "name": "Kokoro Thai（本地离线）",
+      "description": "本机 Kokoro Thai ONNX 模型，12 个泰语音色，24kHz PCM16 WAV，不联网。",
+      "languages": ["th"],
+      "kind": "command",
+      "command": "D:/frontsoftware/python/install/python.exe",
+      "args": [
+        "E:/temp/frontproject/animation-2d/apps/server/scripts/kokoro_thai.py",
+        "--text", "{text}",
+        "--voice", "{voice}",
+        "--speed", "{speed}",
+        "--model-root", "E:/temp/frontproject/tts-generator/tts/model",
+        "--output", "{output}"
+      ],
+      "timeoutMs": 180000,
+      "outputExtension": ".wav",
+      "voices": [
+        { "id": "1", "name": "泰语音色 1", "description": "Kokoro Thai speaker 1", "language": "th" },
+        { "id": "2", "name": "泰语音色 2", "description": "Kokoro Thai speaker 2", "language": "th" },
+        { "id": "3", "name": "泰语音色 3", "description": "Kokoro Thai speaker 3", "language": "th" },
+        { "id": "11", "name": "泰语音色 11", "description": "Kokoro Thai speaker 11", "language": "th" }
+      ],
+      "defaultVoiceByLanguage": { "th": "1" },
+      "minSpeed": 0.5,
+      "maxSpeed": 2,
+      "defaultSpeed": 1
+    }
+  ],
+  "disabledProviders": [
+    {
+      "id": "edge-tts-zh",
+      "name": "edge-tts 中文（在线，需明确同意）",
+      "description": "微软在线语音服务，中文音色自然；会把台词发到公网，需先 pip install edge-tts 并征得用户明确同意。",
+      "languages": ["zh"],
+      "kind": "command",
+      "command": "python",
+      "args": [
+        "-m", "edge_tts",
+        "--text", "{text}",
+        "--voice", "{voice}",
+        "--write-media", "{output}"
+      ],
+      "timeoutMs": 60000,
+      "outputExtension": ".mp3",
+      "voices": [
+        { "id": "zh-CN-XiaoxiaoNeural", "name": "晓晓（女声）", "description": "中文普通话女声", "language": "zh" },
+        { "id": "zh-CN-YunxiNeural", "name": "云希（男声）", "description": "中文普通话男声", "language": "zh" },
+        { "id": "zh-CN-YunxiaNeural", "name": "云夏（少年）", "description": "中文普通话少年音", "language": "zh" }
+      ],
+      "defaultVoiceByLanguage": { "zh": "zh-CN-XiaoxiaoNeural" },
+      "minSpeed": 0.5,
+      "maxSpeed": 2,
+      "defaultSpeed": 1
+    }
+  ]
+}

@@ -1,6 +1,13 @@
 import { z } from 'zod';
-import { MAX_CHARACTERS_PER_SCENE, MAX_STAGE_OBJECTS, MAX_SCENE_TRANSITION_FRAMES, POSTURE_VALUES } from '../constants';
+import {
+  DEFAULT_PROJECT_LANGUAGE,
+  MAX_CHARACTERS_PER_SCENE,
+  MAX_STAGE_OBJECTS,
+  MAX_SCENE_TRANSITION_FRAMES,
+  POSTURE_VALUES,
+} from '../constants';
 import { characterInstanceSchema } from './character';
+import { projectLanguageSchema } from './language';
 
 /**
  * 场景「进入转场」：从上一个场景切入本场景时叠加的交叉淡化。
@@ -59,6 +66,11 @@ export const dialogueEventSchema = z.object({
    * 只会把时长延长到不小于音频时长，避免音频被提前截断（PRD 12.3）。
    */
   manuallyTimed: z.boolean().optional(),
+  /**
+   * 对白语言：显式指定则优先，缺省继承舞台（项目）默认语言。
+   * 支持同一项目内中泰混排；旧数据无该字段即视为继承，零迁移。
+   */
+  language: projectLanguageSchema.optional(),
 });
 export type DialogueEvent = z.infer<typeof dialogueEventSchema>;
 
@@ -85,6 +97,8 @@ export const stageDataSchema = z.object({
   projectId: z.string().uuid(),
   version: z.number().int().nonnegative().default(0),
   activeSceneId: z.string().nullable().default(null),
+  /** 项目默认语言；对白未显式指定时继承，旧数据缺省为中文。 */
+  language: projectLanguageSchema.default(DEFAULT_PROJECT_LANGUAGE),
   scenes: z.array(stageSceneSchema).default([]),
 });
 export type StageData = z.infer<typeof stageDataSchema>;

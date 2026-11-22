@@ -4,6 +4,8 @@ import {
   POSTURE_LABELS,
   POSTURE_VALUES,
   PROJECT_DEFAULTS,
+  PROJECT_LANGUAGES,
+  PROJECT_LANGUAGE_LABELS,
   type Asset,
   type CharacterAsset,
   type CharacterInstance,
@@ -164,53 +166,111 @@ export default function PropertyPanel({
                   </div>
                 </div>
 
-                {/* 阶段 7：角色级配音参数。引擎由 Provider 注册表全局决定，UI 只暴露通用字段。 */}
-                {ttsProviders.length > 0 && (
-                  <div className="border-t border-line pt-3">
-                    <p className="field-label">配音设置（角色覆盖）</p>
-                    <dl className="mb-2 text-[11px]">
-                      <InfoRow label="TTS 引擎" value={ttsProviders[0].name} />
-                    </dl>
-                    <label className="mb-2 block">
-                      <span className="mb-1 block text-[11px] text-muted">声音</span>
-                      <select
-                        aria-label="角色配音声音"
-                        className="field-input w-full"
-                        value={selectedCharacter.voiceId ?? ''}
-                        onChange={(event) =>
-                          onUpdateCharacter({ voiceId: event.target.value || undefined })
-                        }
-                      >
-                        <option value="">跟随生成时的默认声音</option>
-                        {ttsProviders[0].voices.map((voice) => (
-                          <option key={voice.id} value={voice.id}>
-                            {voice.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="block">
-                      <span className="mb-1 block text-[11px] text-muted">
-                        语速 {(selectedCharacter.speed ?? ttsProviders[0].defaultSpeed).toFixed(1)}×
-                      </span>
-                      <input
-                        aria-label="角色配音语速"
-                        type="range"
-                        min={ttsProviders[0].minSpeed}
-                        max={ttsProviders[0].maxSpeed}
-                        step={0.1}
-                        value={selectedCharacter.speed ?? ttsProviders[0].defaultSpeed}
-                        onChange={(event) =>
-                          onUpdateCharacter({ speed: Number(event.target.value) })
-                        }
-                        className="w-full accent-accent"
-                      />
-                    </label>
-                    <p className="mt-1.5 text-[11px] leading-5 text-muted">
-                      未单独设置时沿用「生成配音」弹窗中的参数。
-                    </p>
-                  </div>
-                )}
+                {/* 阶段 7 / 双语：角色级配音参数。引擎与音色按语言自动路由，UI 只暴露通用字段。 */}
+                {ttsProviders.length > 0 &&
+                  (() => {
+                    const seen = new Set<string>();
+                    const allVoices: TtsProvider['voices'] = [];
+                    for (const item of ttsProviders) {
+                      for (const voice of item.voices) {
+                        if (seen.has(voice.id)) continue;
+                        seen.add(voice.id);
+                        allVoices.push(voice);
+                      }
+                    }
+                    const speedProvider = ttsProviders[0];
+                    return (
+                      <div className="border-t border-line pt-3">
+                        <p className="field-label">配音设置（角色覆盖）</p>
+                        <dl className="mb-2 text-[11px]">
+                          <InfoRow
+                            label="TTS 引擎"
+                            value={ttsProviders
+                              .map(
+                                (item) =>
+                                  `${item.name}（${item.languages
+                                    .map((lang) => PROJECT_LANGUAGE_LABELS[lang])
+                                    .join('/')}）`,
+                              )
+                              .join('、')}
+                          />
+                        </dl>
+                        <label className="mb-2 block">
+                          <span className="mb-1 block text-[11px] text-muted">
+                            默认声音（不分语言）
+                          </span>
+                          <select
+                            aria-label="角色配音声音"
+                            className="field-input w-full"
+                            value={selectedCharacter.voiceId ?? ''}
+                            onChange={(event) =>
+                              onUpdateCharacter({ voiceId: event.target.value || undefined })
+                            }
+                          >
+                            <option value="">跟随生成时的默认声音</option>
+                            {allVoices.map((voice) => (
+                              <option key={voice.id} value={voice.id}>
+                                {voice.name}（{PROJECT_LANGUAGE_LABELS[voice.language]}）
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        {PROJECT_LANGUAGES.map((lang) => {
+                          const voices = allVoices.filter((voice) => voice.language === lang);
+                          if (voices.length === 0) return null;
+                          return (
+                            <label key={lang} className="mb-2 block">
+                              <span className="mb-1 block text-[11px] text-muted">
+                                {PROJECT_LANGUAGE_LABELS[lang]}台词音色（优先于默认声音）
+                              </span>
+                              <select
+                                aria-label={`${PROJECT_LANGUAGE_LABELS[lang]}台词音色`}
+                                className="field-input w-full"
+                                value={selectedCharacter.voiceByLanguage?.[lang] ?? ''}
+                                onChange={(event) => {
+                                  const value = event.target.value || undefined;
+                                  const current = selectedCharacter.voiceByLanguage ?? {};
+                                  onUpdateCharacter({
+                                    voiceByLanguage:
+                                      lang === 'zh'
+                                        ? { ...current, zh: value }
+                                        : { ...current, th: value },
+                                  });
+                                }}
+                              >
+                                <option value="">跟随引擎按语言默认</option>
+                                {voices.map((voice) => (
+                                  <option key={voice.id} value={voice.id}>
+                                    {voice.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          );
+                        })}
+                        <label className="block">
+                          <span className="mb-1 block text-[11px] text-muted">
+                            语速 {(selectedCharacter.speed ?? speedProvider.defaultSpeed).toFixed(1)}×
+                          </span>
+                          <input
+                            aria-label="角色配音语速"
+                            type="range"
+                            min={speedProvider.minSpeed}
+                            max={speedProvider.maxSpeed}
+                            step={0.1}
+                            value={selectedCharacter.speed ?? speedProvider.defaultSpeed}
+                            onChange={(event) =>
+                              onUpdateCharacter({ speed: Number(event.target.value) })
+                            }
+                            className="w-full accent-accent"
+                          />
+                        </label>
+                        <p className="mt-1.5 text-[11px] leading-5 text-muted">
+                          按语言音色优先于默认声音；未单独设置时沿用「生成配音」弹窗中的自动路由结果。
+                        </p>
+                      </div>
+                    );
+                  })()}
 
                 <Button className="h-8 w-full text-xs" onClick={onOpenCharacterEditor}>
                   查看分层素材与锚点

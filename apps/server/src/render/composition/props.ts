@@ -32,6 +32,12 @@ export interface RenderLayer {
 export interface SubtitleView {
   text: string;
   characterName: string;
+  /** 服务端预计算好的断行结果；Remotion 只绘制，不实现第二套排版逻辑。 */
+  lines: string[];
+  /** 行高（逻辑像素）：泰文更大，给上下标元音与声调符号留空间。 */
+  lineHeight: number;
+  /** 排版语言，决定字体栈与断行方式。 */
+  language: 'zh' | 'th';
 }
 
 /** 一层完整画面：背景 + 图层 + 字幕。转场时「上一场景定格」与当前画面各占一层。 */

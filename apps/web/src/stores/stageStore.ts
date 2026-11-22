@@ -16,6 +16,7 @@ import {
   MAX_HISTORY_ENTRIES,
   MAX_STAGE_OBJECTS,
   PROJECT_DEFAULTS,
+  PROJECT_LANGUAGE_LABELS,
   STAGE_VIEWPORT,
   TIMELINE_VIEW,
   dialogueEventSchema,
@@ -25,6 +26,7 @@ import {
   type CharacterAsset,
   type CharacterInstance,
   type DialogueEvent,
+  type ProjectLanguage,
   type SceneTransition,
   type StageData,
   type StageObject,
@@ -101,6 +103,8 @@ export interface StageState {
    * 旧数据中 activeSceneId 为空 / 失效时，点击当前场景只修正指针，不压入历史。
    */
   setActiveScene: (sceneId: string) => void;
+  /** 项目默认语言：对白未显式指定时继承，纳入撤销历史并立即落盘。 */
+  setLanguage: (language: ProjectLanguage) => void;
   /** 工作台场景管理：结构变更统一走 applyChange，纳入撤销历史。 */
   addScene: () => string | null;
   /** 复制场景（含道具、人物、对白与转场配置），返回新场景 id。 */
@@ -389,6 +393,14 @@ export const useStageStore = create<StageState>((set, get) => ({
         selectedId: null,
         limitNotice: null,
       };
+    }),
+
+  setLanguage: (language) =>
+    set((state) => {
+      const stage = state.stage;
+      if (!stage || stage.language === language) return state;
+      const nextStage: StageData = { ...stage, language };
+      return applyChange(state, nextStage, `项目语言设为「${PROJECT_LANGUAGE_LABELS[language]}」`);
     }),
 
   addScene: () => {

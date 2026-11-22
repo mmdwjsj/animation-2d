@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { projectLanguageSchema } from './language';
 
 /**
  * 阶段 7 TTS 音频资产（架构 9 节 / PRD 13）。
@@ -30,6 +31,8 @@ export const audioAssetSchema = z.object({
   providerId: z.string().min(1).max(80),
   voiceId: z.string().min(1).max(80),
   speed: z.number().positive(),
+  /** 生成时实际使用的语言，供双语项目追溯；旧资产可缺省。 */
+  language: projectLanguageSchema.optional(),
   /** 来源对白 ID，重新生成后引用必须指向新资产，不留下悬空引用。 */
   sourceDialogueId: z.string().min(1).max(80),
   /** 对白文本 + 参数的确定性摘要，用于判断是否真的需要重新生成。 */
