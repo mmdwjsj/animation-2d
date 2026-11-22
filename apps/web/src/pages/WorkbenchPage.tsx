@@ -9,6 +9,11 @@ import { characterDisplayHeight } from '../features/stage-editor/layerGeometry';
 import PixiStage from '../features/stage-editor/PixiStage';
 import PropertyPanel from '../features/stage-editor/PropertyPanel';
 import ResourcePanel, { type ResourceTab } from '../features/stage-editor/ResourcePanel';
+import SceneEditorModal, {
+  type SceneEditFocus,
+  type SceneEditorPatch,
+} from '../features/workbench/SceneEditorModal';
+import SceneTabBar from '../features/workbench/SceneTabBar';
 import TimelinePanel from '../features/timeline/TimelinePanel';
 import TtsDialog from '../features/tts/TtsDialog';
 import ExportDialog from '../features/render/ExportDialog';
@@ -25,6 +30,7 @@ import { useTimelineStore } from '../stores/timelineStore';
  * 阶段 6：底部时间轴、确定性帧预览、撤销 / 重做；
  * 阶段 7：TTS 配音、真实时长回写、缓存振幅包络驱动嘴型；
  * 阶段 8：导出前检查、Remotion 逐帧渲染与 FFmpeg 音视频合成。
+ * 场景栏：切换、新建、复制、重命名、删除、调整顺序、进入转场与场景编辑（PRD 7.3）。
  */
 export default function WorkbenchPage() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -52,6 +58,13 @@ export default function WorkbenchPage() {
   const stageSaveError = useStageStore((state) => state.saveError);
   const limitNotice = useStageStore((state) => state.limitNotice);
   const select = useStageStore((state) => state.select);
+  const setActiveScene = useStageStore((state) => state.setActiveScene);
+  const addScene = useStageStore((state) => state.addScene);
+  const duplicateScene = useStageStore((state) => state.duplicateScene);
+  const updateScene = useStageStore((state) => state.updateScene);
+  const deleteScene = useStageStore((state) => state.deleteScene);
+  const moveScene = useStageStore((state) => state.moveScene);
+  const moveSceneTo = useStageStore((state) => state.moveSceneTo);
   const addObject = useStageStore((state) => state.addObject);
   const addCharacter = useStageStore((state) => state.addCharacter);
   const moveObject = useStageStore((state) => state.moveObject);
@@ -92,6 +105,11 @@ export default function WorkbenchPage() {
   const [editorCharacterId, setEditorCharacterId] = useState<string | null>(null);
   const [ttsOpen, setTtsOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [sceneEditor, setSceneEditor] = useState<{
+    sceneId: string;
+    focus: SceneEditFocus;
+  } | null>(null);
+  const [sceneDeleteId, setSceneDeleteId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!projectId) return;
@@ -172,6 +190,75 @@ export default function WorkbenchPage() {
     setAudioFile(result.audio);
   };
 
+  /** 场景切换 / 新建 / 删除当前场景后，旧场景的播放头、选中与弹窗都不再适用。 */
+  const resetSceneView = () => {
+    const timeline = useTimelineStore.getState();
+    timeline.setPlaying(false);
+    timeline.setCurrentFrame(0);
+    timeline.selectDialogue(null);
+    setDeleteConfirmId(null);
+    setEditorCharacterId(null);
+  };
+
+  /**
+   * 场景结构变更会改变服务端读取到的 activeSceneId 与场景顺序，
+   * 因此立即落盘而不等 2 秒防抖，避免紧接着打开导出 / 配音时读到旧数据。
+   */
+  const commitSceneChange = () => void saveStageNow();
+
+  const handleSelectScene = (sceneId: string) => {
+    const before = useStageStore.getState().stage?.activeSceneId ?? null;
+    setActiveScene(sceneId);
+    const after = useStageStore.getState().stage?.activeSceneId ?? null;
+    if (before === after) return;
+    resetSceneView();
+    commitSceneChange();
+  };
+
+  const handleAddScene = () => {
+    const id = addScene();
+    if (!id) return;
+    resetSceneView();
+    commitSceneChange();
+  };
+
+  const handleDuplicateScene = (sceneId: string) => {
+    const id = duplicateScene(sceneId);
+    if (!id) return;
+    resetSceneView();
+    commitSceneChange();
+  };
+
+  const handleSceneMove = (sceneId: string, direction: 'left' | 'right') => {
+    moveScene(sceneId, direction);
+    commitSceneChange();
+  };
+
+  const handleSceneMoveTo = (sceneId: string, targetIndex: number) => {
+    moveSceneTo(sceneId, targetIndex);
+    commitSceneChange();
+  };
+
+  const handleSceneEdit = (sceneId: string, focus: SceneEditFocus) =>
+    setSceneEditor({ sceneId, focus });
+
+  const handleSceneSave = (patch: SceneEditorPatch) => {
+    if (!sceneEditor) return;
+    updateScene(sceneEditor.sceneId, patch);
+    setSceneEditor(null);
+    commitSceneChange();
+  };
+
+  const confirmDeleteScene = () => {
+    if (!sceneDeleteId) return;
+    const before = useStageStore.getState().stage?.activeSceneId ?? null;
+    deleteScene(sceneDeleteId);
+    const after = useStageStore.getState().stage?.activeSceneId ?? null;
+    if (before !== after) resetSceneView();
+    setSceneDeleteId(null);
+    commitSceneChange();
+  };
+
   if (!project) {
     return (
       <FullScreenNotice
@@ -224,6 +311,10 @@ export default function WorkbenchPage() {
   const editorCharacterAsset = editorInstance
     ? (characters.find((item) => item.id === editorInstance.assetId) ?? null)
     : null;
+
+  const sceneDeleteTarget = stage?.scenes.find((item) => item.id === sceneDeleteId) ?? null;
+  const sceneEditorScene = stage?.scenes.find((item) => item.id === sceneEditor?.sceneId) ?? null;
+  const sceneEditorIndex = stage?.scenes.findIndex((item) => item.id === sceneEditor?.sceneId) ?? -1;
 
   return (
     <div className="flex h-screen flex-col">
@@ -298,6 +389,20 @@ export default function WorkbenchPage() {
           </Button>
         </div>
       </header>
+
+      <SceneTabBar
+        scenes={stage?.scenes ?? []}
+        assets={assets}
+        activeSceneId={scene?.id ?? null}
+        loading={stageLoading}
+        onSelect={handleSelectScene}
+        onAdd={handleAddScene}
+        onDuplicate={handleDuplicateScene}
+        onMove={handleSceneMove}
+        onMoveTo={handleSceneMoveTo}
+        onEdit={handleSceneEdit}
+        onDelete={setSceneDeleteId}
+      />
 
       {combinedStatus === 'error' && (saveError || stageSaveError) && (
         <div className="flex shrink-0 items-center gap-3 border-b border-danger bg-panel px-4 py-2 text-xs">
@@ -437,12 +542,57 @@ export default function WorkbenchPage() {
         </p>
       </Modal>
 
+      <Modal
+        open={sceneDeleteId !== null && sceneDeleteTarget !== null}
+        title="删除场景"
+        onClose={() => setSceneDeleteId(null)}
+        footer={
+          <>
+            <Button onClick={() => setSceneDeleteId(null)}>取消</Button>
+            <Button
+              variant="danger"
+              data-testid="scene-delete-confirm"
+              onClick={confirmDeleteScene}
+            >
+              确认删除场景
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm leading-6 text-ink">
+          确定删除场景「{sceneDeleteTarget?.name}」吗？
+        </p>
+        <div
+          data-testid="scene-delete-impact"
+          className="mt-3 space-y-1.5 rounded border border-line bg-page p-3 text-xs leading-6 text-muted"
+        >
+          <p>
+            该场景内包含 {sceneDeleteTarget?.dialogueEvents.length ?? 0} 句对白 ·{' '}
+            {sceneDeleteTarget?.characters.length ?? 0} 个人物 ·{' '}
+            {sceneDeleteTarget?.objects.length ?? 0} 个道具，将随场景一起移除。
+          </p>
+          <p>删除后其余场景自动前移，全局时间轴与导出拼接顺序同步变化。</p>
+          <p>项目素材与已生成的音频文件不会被删除；可按 Ctrl+Z 撤销恢复。</p>
+        </div>
+      </Modal>
+
       <CharacterEditorModal
         open={editorCharacterId !== null && editorInstance !== null}
         character={editorCharacterAsset}
         instance={editorInstance}
         onClose={() => setEditorCharacterId(null)}
         onUpdate={(patch) => editorInstance && updateCharacter(editorInstance.id, patch)}
+      />
+
+      <SceneEditorModal
+        open={sceneEditor !== null && sceneEditorScene !== null}
+        scene={sceneEditorScene}
+        index={sceneEditorIndex >= 0 ? sceneEditorIndex : 0}
+        sceneCount={stage?.scenes.length ?? 0}
+        assets={sceneAssets}
+        focus={sceneEditor?.focus ?? 'name'}
+        onClose={() => setSceneEditor(null)}
+        onSave={handleSceneSave}
       />
 
       <TtsDialog

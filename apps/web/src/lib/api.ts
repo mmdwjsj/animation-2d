@@ -8,6 +8,7 @@ import type {
   Project,
   RenderJob,
   RenderRequest,
+  RenderScope,
   RenderValidation,
   ScriptDraft,
   ScriptFile,
@@ -230,9 +231,13 @@ export const scriptsApi = {
 
 /** 视频导出（架构 12 节 / PRD 14）。任务状态与进度均由服务端真实渲染过程提供。 */
 export const renderApi = {
-  validate: async (projectId: string, fps: number): Promise<RenderValidation> => {
+  validate: async (
+    projectId: string,
+    fps: number,
+    scope: RenderScope = 'all',
+  ): Promise<RenderValidation> => {
     const result = await request<{ data: RenderValidation }>(
-      `/api/projects/${encodeURIComponent(projectId)}/render/validate?fps=${fps}`,
+      `/api/projects/${encodeURIComponent(projectId)}/render/validate?fps=${fps}&scope=${encodeURIComponent(scope)}`,
     );
     return result.data;
   },

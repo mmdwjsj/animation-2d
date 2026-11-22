@@ -1,5 +1,10 @@
 import { readFileSync } from 'node:fs';
-import { renderRequestSchema, type RenderRequest } from '@animation/shared';
+import {
+  RENDER_SCOPES,
+  renderRequestSchema,
+  type RenderRequest,
+  type RenderScope,
+} from '@animation/shared';
 import type { FastifyInstance } from 'fastify';
 import { errors } from '../errors';
 import type { RenderService } from '../render/renderService';
@@ -10,18 +15,26 @@ import type { RenderService } from '../render/renderService';
  */
 export function registerRenderRoutes(app: FastifyInstance, render: RenderService): void {
   /** PRD 14 步骤 1-5 的只读检查，供导出弹窗在开始前展示阻断项与提示项。 */
-  app.get<{ Params: { id: string }; Querystring: { fps?: string } }>(
-    '/api/projects/:id/render/validate',
-    async (request) => {
-      const raw = request.query.fps;
-      let fps: number | undefined;
-      if (raw !== undefined) {
-        fps = Number(raw);
-        if (!Number.isFinite(fps) || fps <= 0) throw errors.validation('帧率参数不合法。');
+  app.get<{
+    Params: { id: string };
+    Querystring: { fps?: string; scope?: string };
+  }>('/api/projects/:id/render/validate', async (request) => {
+    const rawFps = request.query.fps;
+    let fps: number | undefined;
+    if (rawFps !== undefined) {
+      fps = Number(rawFps);
+      if (!Number.isFinite(fps) || fps <= 0) throw errors.validation('帧率参数不合法。');
+    }
+    const rawScope = request.query.scope;
+    let scope: RenderScope | undefined;
+    if (rawScope !== undefined) {
+      if (!(RENDER_SCOPES as readonly string[]).includes(rawScope)) {
+        throw errors.validation('导出范围参数不合法。');
       }
-      return { data: render.validate(request.params.id, fps) };
-    },
-  );
+      scope = rawScope as RenderScope;
+    }
+    return { data: render.validate(request.params.id, fps, scope) };
+  });
 
   app.post('/api/render', async (request) => {
     const parsed = renderRequestSchema.safeParse(request.body);

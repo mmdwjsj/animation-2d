@@ -99,3 +99,24 @@ export const TTS_AUDIO = {
 } as const;
 
 /** 缓存振幅包络的嘴型阈值由 animation-core 单一定义并导出，避免两份常量漂移。 */
+
+/**
+ * 场景间「进入转场」预设（工作台场景编辑 → 导出拼接）。
+ *
+ * 转场叠加在场景边界开始的前 N 个**项目逻辑帧**上，不额外占用时间轴，
+ * 因此 buildSceneSpans、音频全局偏移、导出总帧数都不受影响。
+ * 30 FPS 下 9 帧 ≈ 0.3 秒、15 帧 ≈ 0.5 秒。
+ */
+export const SCENE_TRANSITION_PRESETS = [
+  { id: 'none', label: '无转场', durationFrames: 0 },
+  { id: 'fade-300', label: '淡化 0.3 秒（9 帧）', durationFrames: 9 },
+  { id: 'fade-500', label: '淡化 0.5 秒（15 帧）', durationFrames: 15 },
+] as const;
+export type SceneTransitionPresetId = (typeof SCENE_TRANSITION_PRESETS)[number]['id'];
+
+/** 防止误填超大转场帧数把整个场景吃掉。 */
+export const MAX_SCENE_TRANSITION_FRAMES = 60;
+
+export function sceneTransitionPresetById(id: SceneTransitionPresetId) {
+  return SCENE_TRANSITION_PRESETS.find((item) => item.id === id) ?? SCENE_TRANSITION_PRESETS[0];
+}

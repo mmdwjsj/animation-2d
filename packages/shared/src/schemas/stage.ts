@@ -1,6 +1,23 @@
 import { z } from 'zod';
-import { MAX_CHARACTERS_PER_SCENE, MAX_STAGE_OBJECTS, POSTURE_VALUES } from '../constants';
+import { MAX_CHARACTERS_PER_SCENE, MAX_STAGE_OBJECTS, MAX_SCENE_TRANSITION_FRAMES, POSTURE_VALUES } from '../constants';
 import { characterInstanceSchema } from './character';
+
+/**
+ * 场景「进入转场」：从上一个场景切入本场景时叠加的交叉淡化。
+ * 可选字段，旧项目没有该字段即视为无转场；null 表示用户主动关闭。
+ * 转场不占额外帧，只在场景开头前 durationFrames 帧内做画面叠加。
+ */
+export const sceneTransitionSchema = z.object({
+  type: z.literal('fade'),
+  durationFrames: z.number().int().positive().max(MAX_SCENE_TRANSITION_FRAMES),
+});
+export type SceneTransition = z.infer<typeof sceneTransitionSchema>;
+
+/** 把任意输入（含旧数据 / 外部 API）安全地归一化为合法转场配置。 */
+export function normalizeSceneTransition(value: unknown): SceneTransition | null {
+  const parsed = sceneTransitionSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
 
 /**
  * 舞台布局数据（架构 6.5 SceneProjectData 的静态子集）。
@@ -55,6 +72,8 @@ export const stageSceneSchema = z.object({
   characters: z.array(characterInstanceSchema).max(MAX_CHARACTERS_PER_SCENE).default([]),
   /** 对白事件；.default([]) 兼容阶段 2/3 落盘的数据。 */
   dialogueEvents: z.array(dialogueEventSchema).default([]),
+  /** 进入本场景的转场；缺省 / null 表示无转场，兼容历史项目数据。 */
+  transition: sceneTransitionSchema.nullable().optional(),
 });
 export type StageScene = z.infer<typeof stageSceneSchema>;
 

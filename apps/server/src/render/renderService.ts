@@ -13,6 +13,7 @@ import {
   type RenderJob,
   type RenderJobStage,
   type RenderRequest,
+  type RenderScope,
   type RenderValidation,
 } from '@animation/shared';
 import { appConfig } from '../config';
@@ -23,7 +24,8 @@ import { resolveProjectDir } from '../utils/projectPaths';
 import { buildCompositionProps } from './buildCompositionProps';
 import { COMPOSITION_ID } from './composition/props';
 import { muxAudio } from './muxAudio';
-import { pickExportScene, validateRenderInput } from './renderValidation';
+import { pickExportScenes } from './sceneSpans';
+import { validateRenderInput } from './renderValidation';
 
 /**
  * 渲染任务（架构 5.8 / PRD 14）。
@@ -109,11 +111,12 @@ export class RenderService {
   }
 
   /** PRD 14 步骤 1-5 的只读检查，不写盘、不改动项目数据。 */
-  validate(projectId: string, exportFps?: number): RenderValidation {
+  validate(projectId: string, exportFps?: number, scope?: RenderScope): RenderValidation {
     return validateRenderInput(projectId, {
       projectsDir: this.projectsDir,
       assets: this.deps.assets,
       ...(exportFps ? { exportFps } : {}),
+      ...(scope ? { scope } : {}),
     });
   }
 
@@ -130,7 +133,7 @@ export class RenderService {
       throw errors.validation('该项目已有导出任务正在进行，请等待完成后再试。');
     }
 
-    const validation = this.validate(request.projectId, config.fps);
+    const validation = this.validate(request.projectId, config.fps, config.scope);
     if (!validation.canRender) {
       const failed = validation.checks.filter((item) => item.blocking && !item.ok);
       throw errors.validation(
@@ -203,17 +206,29 @@ export class RenderService {
     try {
       this.patch(id, { stage: 'preparing', message: '正在读取项目与素材…', progress: null, framesRendered: 0 });
       const stage = this.deps.stage.getStage(projectId);
-      const scene = pickExportScene(stage);
-      if (!scene) throw errors.render('没有可导出的场景，请先导入剧本草稿。');
+      const scenes = pickExportScenes(stage, config.scope);
+      if (scenes.length === 0) throw errors.render('没有可导出的场景，请先导入剧本草稿。');
+      // 时间轴与帧数必须同源：若校验后场景被改动，如实失败而不是渲染出不一致的视频。
+      const spans = validation.sceneSpans;
+      if (
+        spans.length !== scenes.length ||
+        spans.some((span, index) => span.sceneId !== scenes[index]?.id)
+      ) {
+        throw errors.render('导出场景已变化，请重新打开导出弹窗后再导出。');
+      }
 
-      const { props, audioTracks } = buildCompositionProps({
+      const { props, audioTracks, frameChunkCount, propsBytes } = buildCompositionProps({
         projectDir: dir,
         assets: this.deps.assets,
-        stage,
-        scene,
+        scenes,
+        spans,
         config,
         totalFrames: validation.totalFrames,
       });
+      // 真实测量值，仅用于运行日志；UI 进度仍只取 Remotion onProgress。
+      console.info(
+        `[animation-video] 导出画面编译：${frameChunkCount} 个帧块 / ${validation.totalFrames} 帧，inputProps ${(propsBytes / 1024).toFixed(1)} KB`,
+      );
       mkdirSync(path.join(dir, config.outputDir), { recursive: true });
 
       this.patch(id, { stage: 'rendering', message: '正在准备渲染环境…', progress: null });

@@ -33,6 +33,8 @@ describe('阶段 8：FFmpeg 音视频合成命令', () => {
     expect(filter).toContain('atrim=0:12.133');
     expect(filter).toContain('apad=whole_dur=12.133');
     expect(filter).toContain('aresample=48000');
+    // 音轨已按视频时长补齐；-shortest 会让 AAC priming 提前截断视频尾部帧。
+    expect(args).not.toContain('-shortest');
 
     expect(args[args.length - 1]).toBe(output);
   });

@@ -4,7 +4,9 @@ import {
   COMPOSITION_ID,
   LOGICAL_HEIGHT,
   LOGICAL_WIDTH,
+  frameAtFrame,
   type CompositionProps,
+  type RenderFrameVisual,
   type RenderLayer,
 } from './props';
 
@@ -12,6 +14,9 @@ import {
  * Remotion Adapter（架构 8 节）：把服务端预计算的 `AnimationFrameState` 绘制指令
  * 转成视频帧画面。人物位置、姿态、嘴型、字幕全部来自共享动画核心，
  * 这里不重复实现任何动画计算。
+ *
+ * 帧块化：inputProps 只携带状态变化处的帧块，frameAtFrame 按当前帧二分定位；
+ * 场景间转场时把「上一场景定格」与「当前场景」作为两层叠加交叉淡化。
  */
 
 function layerStyle(layer: RenderLayer): CSSProperties {
@@ -26,12 +31,100 @@ function layerStyle(layer: RenderLayer): CSSProperties {
   };
 }
 
+interface SceneVisualProps {
+  visual: RenderFrameVisual;
+  assets: Record<string, string>;
+  logicalWidth: number;
+  logicalHeight: number;
+  /** 整层不透明度；转场时两层反向变化实现交叉淡化。 */
+  opacity: number;
+  /** 只有当前场景层暴露字幕测试锚点，避免转场期间出现两个同名节点。 */
+  subtitleTestId?: string;
+}
+
+const SceneVisual: FC<SceneVisualProps> = ({
+  visual,
+  assets,
+  logicalWidth,
+  logicalHeight,
+  opacity,
+  subtitleTestId,
+}) => {
+  const background = visual.background ? assets[visual.background] : undefined;
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left: 0,
+        top: 0,
+        width: logicalWidth,
+        height: logicalHeight,
+        opacity,
+        overflow: 'hidden',
+      }}
+    >
+      {background ? (
+        <Img
+          src={background}
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            width: logicalWidth,
+            height: logicalHeight,
+          }}
+        />
+      ) : null}
+
+      {visual.layers.map((layer, index) => (
+        <Img key={index} src={assets[layer.src]} style={layerStyle(layer)} />
+      ))}
+
+      {visual.subtitle ? (
+        <div
+          data-testid={subtitleTestId}
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            bottom: 120,
+            display: 'flex',
+            justifyContent: 'center',
+            padding: '0 80px',
+          }}
+        >
+          <div
+            style={{
+              maxWidth: '84%',
+              background: 'rgba(12,14,18,0.78)',
+              border: '2px solid rgba(255,255,255,0.18)',
+              borderRadius: 12,
+              padding: '14px 32px',
+              color: '#F5F7FA',
+              fontFamily: '"Microsoft YaHei", "PingFang SC", sans-serif',
+              fontSize: 36,
+              lineHeight: 1.5,
+              textAlign: 'center',
+            }}
+          >
+            {visual.subtitle.characterName ? (
+              <span style={{ marginRight: 8, fontSize: 28, color: '#9AA3B2' }}>
+                {visual.subtitle.characterName}：
+              </span>
+            ) : null}
+            {visual.subtitle.text}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+};
+
 const SceneFrame: FC<CompositionProps> = (props) => {
   const current = useCurrentFrame();
-  const lastIndex = Math.max(0, props.frames.length - 1);
-  const frame = props.frames[Math.min(Math.max(current, 0), lastIndex)];
+  const frame = frameAtFrame(props, current);
   const scale = props.width / props.logicalWidth;
-  const background = props.background ? props.assets[props.background] : undefined;
+  const transition = frame?.transition ?? null;
 
   return (
     <AbsoluteFill style={{ backgroundColor: '#15171B' }}>
@@ -48,58 +141,26 @@ const SceneFrame: FC<CompositionProps> = (props) => {
           overflow: 'hidden',
         }}
       >
-        {background ? (
-          <Img
-            src={background}
-            style={{
-              position: 'absolute',
-              left: 0,
-              top: 0,
-              width: props.logicalWidth,
-              height: props.logicalHeight,
-            }}
-          />
-        ) : null}
-
-        {frame?.layers.map((layer, index) => (
-          <Img key={index} src={props.assets[layer.src]} style={layerStyle(layer)} />
-        ))}
-
-        {frame?.subtitle ? (
-          <div
-            data-testid="export-subtitle"
-            style={{
-              position: 'absolute',
-              left: 0,
-              right: 0,
-              bottom: 120,
-              display: 'flex',
-              justifyContent: 'center',
-              padding: '0 80px',
-            }}
-          >
-            <div
-              style={{
-                maxWidth: '84%',
-                background: 'rgba(12,14,18,0.78)',
-                border: '2px solid rgba(255,255,255,0.18)',
-                borderRadius: 12,
-                padding: '14px 32px',
-                color: '#F5F7FA',
-                fontFamily: '"Microsoft YaHei", "PingFang SC", sans-serif',
-                fontSize: 36,
-                lineHeight: 1.5,
-                textAlign: 'center',
-              }}
-            >
-              {frame.subtitle.characterName ? (
-                <span style={{ marginRight: 8, fontSize: 28, color: '#9AA3B2' }}>
-                  {frame.subtitle.characterName}：
-                </span>
-              ) : null}
-              {frame.subtitle.text}
-            </div>
-          </div>
+        {frame ? (
+          <>
+            {transition ? (
+              <SceneVisual
+                visual={transition.previous}
+                assets={props.assets}
+                logicalWidth={props.logicalWidth}
+                logicalHeight={props.logicalHeight}
+                opacity={1 - transition.opacity}
+              />
+            ) : null}
+            <SceneVisual
+              visual={frame}
+              assets={props.assets}
+              logicalWidth={props.logicalWidth}
+              logicalHeight={props.logicalHeight}
+              opacity={transition ? transition.opacity : 1}
+              subtitleTestId="export-subtitle"
+            />
+          </>
         ) : null}
       </div>
     </AbsoluteFill>
@@ -115,8 +176,7 @@ const DEFAULT_PROPS: CompositionProps = {
   logicalWidth: LOGICAL_WIDTH,
   logicalHeight: LOGICAL_HEIGHT,
   assets: {},
-  background: null,
-  frames: [],
+  frameChunks: [],
 };
 
 const RemotionRoot: FC = () => (

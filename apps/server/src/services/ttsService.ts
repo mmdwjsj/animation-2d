@@ -31,7 +31,23 @@ import type { TtsProviderRegistry, TtsSynthesisProvider, TtsSynthesisResult } fr
  * - 音频文件与元数据放文件系统，不进 SQLite；
  * - 原始剧本、解析草稿、动画数据仍互不覆盖；
  * - plan 只读说明影响，generate 仅在 confirmed=true 时写回动画数据。
+ *
+ * 多场景：生成范围覆盖**全部场景**的对白，但时间轴串排按场景各自独立进行
+ * （对白 startFrame 是场景内局部帧），保证多场景拼接导出时音频不会跨场景错位。
  */
+
+/** 场景内的一条对白；带上所属场景，便于按场景独立串排与定位角色。 */
+interface DialogueTarget {
+  scene: StageScene;
+  dialogue: DialogueEvent;
+}
+
+function flattenDialogues(stage: StageData): DialogueTarget[] {
+  return stage.scenes.flatMap((scene) =>
+    scene.dialogueEvents.map((dialogue) => ({ scene, dialogue })),
+  );
+}
+
 export class TtsService {
   private readonly projectsDir: string;
 
@@ -73,15 +89,20 @@ export class TtsService {
   plan(projectId: string, request: TtsPlanRequest): TtsPlan {
     const provider = this.providers.resolve(request.providerId);
     const normalized = this.providers.normalize(provider, request.voiceId, request.speed);
-    const { scene, stage } = this.sceneOf(projectId);
-    const targets = this.selectDialogues(scene, request.dialogueIds);
+    const stage = this.stages.getStage(projectId);
+    if (stage.scenes.length === 0) {
+      throw errors.validation('项目还没有场景，请先创建动画草稿。');
+    }
+    // 覆盖全部场景；dialogueIds 存在时仍支持跨场景的单句重新生成。
+    const targets = this.selectDialogues(flattenDialogues(stage), request.dialogueIds);
     const assets = this.readAssetFile(projectId);
     const readyIds = new Set(
       assets.assets.filter((item) => item.status === 'ready').map((item) => item.id),
     );
 
-    const dialogues = targets.map((dialogue) => ({
+    const dialogues = targets.map(({ scene, dialogue }) => ({
       dialogueId: dialogue.id,
+      sceneName: scene.name,
       characterName:
         scene.characters.find((item) => item.id === dialogue.characterId)?.name ?? '未绑定角色',
       text: dialogue.text,
@@ -91,6 +112,7 @@ export class TtsService {
       hasAudio: Boolean(dialogue.audioAssetId && readyIds.has(dialogue.audioAssetId)),
     }));
     const protectedCount = dialogues.filter((item) => item.manuallyTimed).length;
+    const firstScene = stage.scenes[0];
 
     return {
       providerId: provider.descriptor.id,
@@ -100,7 +122,12 @@ export class TtsService {
       dialogues,
       protectedCount,
       replacingCount: dialogues.filter((item) => item.hasAudio).length,
-      currentSceneDurationFrames: sceneDurationFrames(scene),
+      currentSceneDurationFrames: firstScene ? sceneDurationFrames(firstScene) : 0,
+      sceneCount: new Set(targets.map((item) => item.scene.id)).size,
+      projectDurationFrames: stage.scenes.reduce(
+        (total, scene) => total + sceneDurationFrames(scene),
+        0,
+      ),
       warning: this.warningText(protectedCount, stage.scenes.length),
     };
   }
@@ -113,15 +140,19 @@ export class TtsService {
     const dir = this.projectDir(projectId);
     const provider = this.providers.resolve(request.providerId);
     const normalized = this.providers.normalize(provider, request.voiceId, request.speed);
-    const { scene, stage } = this.sceneOf(projectId);
-    const targets = this.selectDialogues(scene, request.dialogueIds);
+    const stage = this.stages.getStage(projectId);
+    if (stage.scenes.length === 0) {
+      throw errors.validation('项目还没有场景，请先创建动画草稿。');
+    }
+    const targets = this.selectDialogues(flattenDialogues(stage), request.dialogueIds);
     if (targets.length === 0) {
+      const first = stage.scenes[0];
       return {
         stage,
         audio: this.readAssetFile(projectId),
         generated: [],
-        skipped: [{ dialogueId: '-', reason: '当前场景没有可生成配音的对白。' }],
-        sceneDurationFrames: sceneDurationFrames(scene),
+        skipped: [{ dialogueId: '-', reason: '项目中没有可生成配音的对白。' }],
+        sceneDurationFrames: first ? sceneDurationFrames(first) : 0,
       };
     }
 
@@ -134,9 +165,12 @@ export class TtsService {
     const generated: TtsGenerateResult['generated'] = [];
     const skipped: TtsGenerateResult['skipped'] = [];
     const createdFiles: string[] = [];
-    const updates = new Map<string, { assetId: string; durationFrames: number }>();
+    /** 时间轴串排按场景各自独立：对白 startFrame 是场景内局部帧。 */
+    const updatesByScene = new Map<string, Map<string, { assetId: string; durationFrames: number }>>(
+      stage.scenes.map((scene) => [scene.id, new Map()]),
+    );
 
-    for (const [index, dialogue] of targets.entries()) {
+    for (const [index, { scene, dialogue }] of targets.entries()) {
       const params = this.resolveParams(provider, scene, dialogue, normalized);
       let synthesis: TtsSynthesisResult | undefined;
       try {
@@ -201,7 +235,7 @@ export class TtsService {
         }
       }
       nextAssets.push(asset);
-      updates.set(dialogue.id, { assetId, durationFrames });
+      updatesByScene.get(scene.id)?.set(dialogue.id, { assetId, durationFrames });
       generated.push({
         dialogueId: dialogue.id,
         assetId,
@@ -216,13 +250,12 @@ export class TtsService {
       throw errors.tts(`所有对白配音生成失败：${skipped[0]?.reason ?? '未知原因'}`);
     }
 
-    const nextEvents = this.reflowDialogues(scene.dialogueEvents, updates);
-    const nextStage: StageData = {
-      ...stage,
-      scenes: stage.scenes.map((item) =>
-        item.id === scene.id ? { ...item, dialogueEvents: nextEvents } : item,
-      ),
-    };
+    const nextScenes = stage.scenes.map((scene) => {
+      const updates = updatesByScene.get(scene.id);
+      if (!updates || updates.size === 0) return scene;
+      return { ...scene, dialogueEvents: this.reflowDialogues(scene.dialogueEvents, updates) };
+    });
+    const nextStage: StageData = { ...stage, scenes: nextScenes };
 
     const nextFile: AudioAssetFile = {
       version: previousFile.version + 1,
@@ -239,10 +272,12 @@ export class TtsService {
       throw errors.io('配音已生成但动画数据保存失败，原有动画数据未被修改，请重试。', cause);
     }
 
-    const savedScene = savedStage.scenes.find((item) => item.id === scene.id) ?? scene;
     const startById = new Map(
-      savedScene.dialogueEvents.map((event) => [event.id, event.startFrame]),
+      savedStage.scenes.flatMap((scene) =>
+        scene.dialogueEvents.map((event) => [event.id, event.startFrame] as const),
+      ),
     );
+    const savedFirst = savedStage.scenes[0];
     return {
       stage: savedStage,
       audio: nextFile,
@@ -251,7 +286,7 @@ export class TtsService {
         startFrame: startById.get(item.dialogueId) ?? item.startFrame,
       })),
       skipped,
-      sceneDurationFrames: sceneDurationFrames(savedScene),
+      sceneDurationFrames: savedFirst ? sceneDurationFrames(savedFirst) : 0,
     };
   }
 
@@ -298,24 +333,19 @@ export class TtsService {
     return { provider: defaultProvider, ...normalized };
   }
 
-  private selectDialogues(scene: StageScene, ids?: readonly string[]): DialogueEvent[] {
-    if (!ids) return scene.dialogueEvents.slice();
-    const known = new Set(scene.dialogueEvents.map((event) => event.id));
+  private selectDialogues(
+    all: readonly DialogueTarget[],
+    ids?: readonly string[],
+  ): DialogueTarget[] {
+    if (!ids) return [...all];
+    const known = new Set(all.map((item) => item.dialogue.id));
     for (const id of ids) {
       if (!known.has(id)) {
         throw errors.validation(`对白「${id}」不存在，无法生成配音。`);
       }
     }
     const wanted = new Set(ids);
-    return scene.dialogueEvents.filter((event) => wanted.has(event.id));
-  }
-
-  private sceneOf(projectId: string): { scene: StageScene; stage: StageData } {
-    const stage = this.stages.getStage(projectId);
-    const scene =
-      stage.scenes.find((item) => item.id === stage.activeSceneId) ?? stage.scenes[0] ?? null;
-    if (!scene) throw errors.validation('项目还没有场景，请先创建动画草稿。');
-    return { scene, stage };
+    return all.filter((item) => wanted.has(item.dialogue.id));
   }
 
   private readAssetFile(projectId: string): AudioAssetFile {
@@ -366,7 +396,7 @@ export class TtsService {
     return [
       `生成后按音频真实时长重设对白时长：向上取整并追加 ${TTS_AUDIO.tailFrames} 帧余量，保证配音不会被提前截断。`,
       `未手动调整的对白会按新时长重新串排；${protectedCount > 0 ? `其中 ${protectedCount} 句已手动调整时间，起始位置不会被自动移动，时长只延长不缩短。` : '当前没有手动调整过的对白。'}`,
-      `重新生成会创建新音频资产并更新引用，旧文件保留但标记为已替换，不会留下悬空引用。当前共 ${sceneCount} 个场景，本次只影响当前场景。`,
+      `重新生成会创建新音频资产并更新引用，旧文件保留但标记为已替换，不会留下悬空引用。本次按场景顺序处理全部 ${sceneCount} 个场景，各场景分别串排时间轴，多场景导出时配音不会跨场景错位。`,
     ].join(' ');
   }
 }

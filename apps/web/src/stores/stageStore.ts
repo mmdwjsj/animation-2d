@@ -19,16 +19,27 @@ import {
   STAGE_VIEWPORT,
   TIMELINE_VIEW,
   dialogueEventSchema,
+  normalizeSceneTransition,
+  stageDataSchema,
   type Asset,
   type CharacterAsset,
   type CharacterInstance,
   type DialogueEvent,
+  type SceneTransition,
   type StageData,
   type StageObject,
   type StageScene,
 } from '@animation/shared';
 import { create } from 'zustand';
 import { assetsApi, charactersApi, getErrorMessage, stageApi } from '../lib/api';
+import {
+  createScene,
+  duplicateScene as duplicateSceneOperation,
+  normalizeSceneName,
+  removeScene,
+  reorderSceneTo,
+  shiftScene,
+} from '../features/workbench/sceneOperations';
 
 export type StageSaveStatus = 'saved' | 'dirty' | 'saving' | 'error';
 
@@ -42,6 +53,19 @@ export const LOGICAL_SIZE: Size = {
 export interface HistorySnapshot {
   stage: StageData;
   label: string;
+}
+
+/**
+ * 场景编辑弹窗一次提交的字段；未提供的字段保持不变。
+ * 名称 / 背景 / 顺序合并为一步历史，避免一次保存产生多条撤销记录。
+ */
+export interface ScenePatch {
+  name?: string;
+  backgroundAssetId?: string | null;
+  /** 0 基目标位置，即导出拼接顺序。 */
+  index?: number;
+  /** 进入本场景的转场；null 表示关闭。 */
+  transition?: SceneTransition | null;
 }
 
 export interface StageState {
@@ -72,6 +96,19 @@ export interface StageState {
   pan: (dx: number, dy: number) => void;
   toggleSafeArea: () => void;
   select: (id: string | null) => void;
+  /**
+   * 工作台场景切换：activeSceneId 是落盘字段，切换会标记未保存并纳入撤销历史。
+   * 旧数据中 activeSceneId 为空 / 失效时，点击当前场景只修正指针，不压入历史。
+   */
+  setActiveScene: (sceneId: string) => void;
+  /** 工作台场景管理：结构变更统一走 applyChange，纳入撤销历史。 */
+  addScene: () => string | null;
+  /** 复制场景（含道具、人物、对白与转场配置），返回新场景 id。 */
+  duplicateScene: (sceneId: string) => string | null;
+  updateScene: (sceneId: string, patch: ScenePatch) => void;
+  deleteScene: (sceneId: string) => void;
+  moveScene: (sceneId: string, direction: 'left' | 'right') => void;
+  moveSceneTo: (sceneId: string, targetIndex: number) => void;
   addObject: (assetId: string, point?: Point) => void;
   addCharacter: (assetId: string, point?: Point) => void;
   moveObject: (id: string, x: number, y: number) => void;
@@ -165,6 +202,15 @@ function shallowEqual(a: object, b: object): boolean {
 
 function sameDialogues(a: readonly DialogueEvent[], b: readonly DialogueEvent[]): boolean {
   return a.length === b.length && a.every((item, index) => shallowEqual(item, b[index]));
+}
+
+function sameTransition(
+  a: SceneTransition | null | undefined,
+  b: SceneTransition | null,
+): boolean {
+  const left = a ?? null;
+  if (left === null || b === null) return left === null && b === null;
+  return left.type === b.type && left.durationFrames === b.durationFrames;
 }
 
 /**
@@ -323,6 +369,160 @@ export const useStageStore = create<StageState>((set, get) => ({
   toggleSafeArea: () => set((state) => ({ showSafeArea: !state.showSafeArea })),
 
   select: (id) => set({ selectedId: id }),
+
+  setActiveScene: (sceneId) =>
+    set((state) => {
+      const stage = state.stage;
+      if (!stage) return state;
+      const target = stage.scenes.find((scene) => scene.id === sceneId);
+      if (!target || stage.activeSceneId === sceneId) return state;
+
+      const nextStage: StageData = { ...stage, activeSceneId: sceneId };
+      // 旧项目 animation.json 里 activeSceneId 可能为 null 或指向已删场景，
+      // selectActiveScene 会回退到第一个场景：此时点击的正是当前编辑目标，
+      // 只修正指针并落盘，不产生一条「切换场景」的撤销记录。
+      if (selectActiveScene(state)?.id === sceneId) {
+        return { stage: nextStage, saveStatus: 'dirty', saveError: null };
+      }
+      return {
+        ...applyChange(state, nextStage, `切换到「${target.name}」`),
+        selectedId: null,
+        limitNotice: null,
+      };
+    }),
+
+  addScene: () => {
+    const stage = get().stage;
+    if (!stage) return null;
+    const id = `scene-${crypto.randomUUID()}`;
+    const scene = createScene(id, stage.scenes);
+    const nextStage: StageData = {
+      ...stage,
+      activeSceneId: id,
+      scenes: [...stage.scenes, scene],
+    };
+    set((state) => ({
+      ...applyChange(state, nextStage, `新建场景「${scene.name}」`),
+      selectedId: null,
+      limitNotice: null,
+    }));
+    return id;
+  },
+
+  duplicateScene: (sceneId) => {
+    const stage = get().stage;
+    if (!stage) return null;
+    const id = `scene-${crypto.randomUUID()}`;
+    const result = duplicateSceneOperation(stage.scenes, sceneId, id);
+    if (!result) return null;
+    const nextStage: StageData = { ...stage, ...result };
+    // 复制出的实例 id 全部由新 scene id 派生，Schema 兜底保证可安全落盘。
+    if (!stageDataSchema.safeParse(nextStage).success) return null;
+    const name = nextStage.scenes.find((item) => item.id === id)?.name ?? '副本';
+    set((state) => ({
+      ...applyChange(state, nextStage, `复制场景「${name}」`),
+      selectedId: null,
+      limitNotice: null,
+    }));
+    return id;
+  },
+
+  updateScene: (sceneId, patch) =>
+    set((state) => {
+      const stage = state.stage;
+      if (!stage) return state;
+      const index = stage.scenes.findIndex((item) => item.id === sceneId);
+      if (index < 0) return state;
+      const target = stage.scenes[index];
+
+      let scenes: StageScene[] = stage.scenes.slice();
+      let changed = false;
+
+      if (patch.name !== undefined) {
+        const name = normalizeSceneName(patch.name);
+        // 名称不合法时整次编辑拒绝，避免只写入部分字段却让用户以为全部保存成功。
+        if (name === null) return state;
+        if (name !== target.name) {
+          scenes[index] = { ...scenes[index], name };
+          changed = true;
+        }
+      }
+
+      if (patch.backgroundAssetId !== undefined) {
+        const assetId = patch.backgroundAssetId;
+        if (
+          assetId !== null &&
+          !state.assets.some((asset) => asset.id === assetId && asset.kind === 'scene')
+        ) {
+          return state;
+        }
+        if (assetId !== (target.backgroundAssetId ?? null)) {
+          scenes[index] = { ...scenes[index], backgroundAssetId: assetId };
+          changed = true;
+        }
+      }
+
+      if (patch.index !== undefined) {
+        const reordered = reorderSceneTo(scenes, sceneId, patch.index);
+        if (reordered) {
+          scenes = reordered;
+          changed = true;
+        }
+      }
+
+      if (patch.transition !== undefined) {
+        const transition =
+          patch.transition === null ? null : normalizeSceneTransition(patch.transition);
+        // 非法转场配置整次编辑拒绝，避免只写入部分字段却显示成功。
+        if (patch.transition !== null && transition === null) return state;
+        // 顺序调整可能已经重排数组，必须按 id 重新定位目标场景。
+        const targetIndex = scenes.findIndex((item) => item.id === sceneId);
+        const current = scenes[targetIndex];
+        if (current && !sameTransition(current.transition, transition)) {
+          scenes[targetIndex] = { ...current, transition };
+          changed = true;
+        }
+      }
+
+      if (!changed) return state;
+      const nextStage: StageData = { ...stage, scenes };
+      // 兜底校验：绝不把 Schema 不通过的场景结构交给保存链路。
+      if (!stageDataSchema.safeParse(nextStage).success) return state;
+      const finalName = nextStage.scenes.find((item) => item.id === sceneId)?.name ?? target.name;
+      return applyChange(state, nextStage, `编辑场景「${finalName}」`);
+    }),
+
+  deleteScene: (sceneId) =>
+    set((state) => {
+      const stage = state.stage;
+      if (!stage) return state;
+      const target = stage.scenes.find((item) => item.id === sceneId);
+      if (!target) return state;
+      const result = removeScene(stage.scenes, stage.activeSceneId, sceneId);
+      if (!result) return state; // 至少保留一个场景，不静默删空项目
+      const nextStage: StageData = { ...stage, ...result };
+      return {
+        ...applyChange(state, nextStage, `删除场景「${target.name}」`),
+        selectedId: null,
+        limitNotice: null,
+      };
+    }),
+
+  moveScene: (sceneId, direction) =>
+    set((state) => {
+      if (!state.stage) return state;
+      const scenes = shiftScene(state.stage.scenes, sceneId, direction);
+      if (!scenes) return state;
+      return applyChange(state, { ...state.stage, scenes }, '调整场景顺序');
+    }),
+
+  moveSceneTo: (sceneId, targetIndex) =>
+    set((state) => {
+      if (!state.stage) return state;
+      const scenes = reorderSceneTo(state.stage.scenes, sceneId, targetIndex);
+      if (!scenes) return state;
+      return applyChange(state, { ...state.stage, scenes }, '调整场景顺序');
+    }),
 
   clearLimitNotice: () => set({ limitNotice: null }),
 

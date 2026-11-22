@@ -2,10 +2,13 @@ import {
   RENDER_FPS_OPTIONS,
   RENDER_QUALITIES,
   RENDER_RESOLUTIONS,
+  RENDER_SCOPE_LABELS,
+  RENDER_SCOPES,
   RENDER_STAGE_LABELS,
   type RenderJob,
   type RenderQualityId,
   type RenderResolutionId,
+  type RenderScope,
   type RenderValidation,
 } from '@animation/shared';
 import { useEffect, useMemo, useState } from 'react';
@@ -44,6 +47,7 @@ export default function ExportDialog({
   const [resolution, setResolution] = useState<RenderResolutionId>('1080x1920');
   const [fps, setFps] = useState<(typeof RENDER_FPS_OPTIONS)[number]>(30);
   const [quality, setQuality] = useState<RenderQualityId>('standard');
+  const [scope, setScope] = useState<RenderScope>('all');
   const [validation, setValidation] = useState<RenderValidation | null>(null);
   const [validating, setValidating] = useState(false);
   const [job, setJob] = useState<RenderJob | null>(null);
@@ -84,7 +88,7 @@ export default function ExportDialog({
     let cancelled = false;
     setValidating(true);
     void renderApi
-      .validate(projectId, fps)
+      .validate(projectId, fps, scope)
       .then((result) => {
         if (!cancelled) setValidation(result);
       })
@@ -97,7 +101,7 @@ export default function ExportDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, projectId, fps]);
+  }, [open, projectId, fps, scope]);
 
   // 轮询真实任务状态；完成后停止。
   useEffect(() => {
@@ -138,7 +142,7 @@ export default function ExportDialog({
     try {
       const next = await renderApi.create({
         projectId,
-        config: { fileName, resolution, fps, quality, outputDir: 'renders' },
+        config: { fileName, resolution, fps, quality, outputDir: 'renders', scope },
       });
       window.localStorage.setItem(jobStorageKey(projectId), next.id);
       setJob(next);
@@ -269,7 +273,24 @@ export default function ExportDialog({
                 ))}
               </select>
             </label>
-            <div className="flex items-center gap-2 text-xs text-muted">
+            <label className="flex items-center gap-2 text-xs text-muted">
+              <span className="w-12 shrink-0">范围</span>
+              <select
+                aria-label="导出范围"
+                data-testid="export-scope"
+                value={scope}
+                disabled={running}
+                onChange={(event) => setScope(event.target.value as RenderScope)}
+                className="h-8 flex-1 rounded border border-line bg-page px-2 text-sm text-ink"
+              >
+                {RENDER_SCOPES.map((item) => (
+                  <option key={item} value={item}>
+                    {RENDER_SCOPE_LABELS[item]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="col-span-2 flex items-center gap-2 text-xs text-muted">
               <span className="w-12 shrink-0">输出目录</span>
               <span
                 className="truncate text-ink"
@@ -286,7 +307,7 @@ export default function ExportDialog({
         </section>
 
         {/* PRD 14 步骤 1-5 检查结果 */}
-        <section className="flex flex-col gap-2">
+        <section data-testid="export-checks" className="flex flex-col gap-2">
           <h3 className="text-xs font-semibold text-muted">
             导出前检查 {validating ? '（检查中…）' : ''}
           </h3>
@@ -314,6 +335,58 @@ export default function ExportDialog({
             </ul>
           ) : null}
         </section>
+
+        {/* 多场景拼接顺序：直接来自服务端只读校验的时间轴，不前端臆造 */}
+        {validation && validation.sceneCount > 0 ? (
+          <section data-testid="export-scene-spans" className="flex flex-col gap-2">
+            <h3 className="text-xs font-semibold text-muted">
+              场景拼接顺序（共 {validation.sceneCount} 个 · {validation.projectDurationFrames} 项目帧）
+            </h3>
+            <ol className="flex flex-col gap-1 rounded border border-line bg-page px-3 py-2">
+              {validation.sceneSpans.map((span, index) => (
+                <li
+                  key={span.sceneId}
+                  data-testid="export-scene-span"
+                  className="flex items-center justify-between gap-3 text-xs"
+                >
+                  <span className="truncate text-ink">
+                    {index + 1}. {span.sceneName}
+                  </span>
+                  <span className="shrink-0 text-muted">
+                    帧 {span.startFrame}–{span.endFrame - 1} · {span.durationFrames} 帧
+                  </span>
+                </li>
+              ))}
+            </ol>
+            {validation.sceneTransitions.length > 0 ? (
+              <ul
+                data-testid="export-transitions"
+                className="flex flex-col gap-1 rounded border border-line bg-page px-3 py-2 text-[11px]"
+              >
+                {validation.sceneTransitions.map((transition, index) => (
+                  <li
+                    key={`${transition.fromSceneName}-${transition.toSceneName}-${index}`}
+                    data-testid="export-transition"
+                  >
+                    <span className="text-ink">
+                      {transition.fromSceneName} → {transition.toSceneName}
+                    </span>
+                    <span className="text-muted">
+                      {' '}· 交叉淡化 {transition.durationFrames} 项目帧（{transition.exportFrames} 导出帧）
+                    </span>
+                  </li>
+                ))}
+                <li className="text-muted">
+                  转场叠加在场景边界，不增加视频时长；音频按原全局时间轴播放。
+                </li>
+              </ul>
+            ) : validation.sceneCount > 1 ? (
+              <p className="text-[11px] text-muted">
+                按以上顺序无缝拼接，切换场景时自动换背景，配音按全局时间轴对齐。
+              </p>
+            ) : null}
+          </section>
+        ) : null}
 
         {/* 真实任务状态 */}
         {job && (

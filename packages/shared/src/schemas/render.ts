@@ -20,6 +20,18 @@ export type RenderResolutionId = (typeof RENDER_RESOLUTIONS)[number]['id'];
 
 export const RENDER_FPS_OPTIONS = [24, 30, 60] as const;
 
+/**
+ * 导出范围。`all` 按 stage.scenes 顺序自动拼接全部场景；
+ * `active` 只导出工作台当前场景（保留阶段 8 第一版行为）。
+ * 单场景项目下两者等价。
+ */
+export const RENDER_SCOPES = ['all', 'active'] as const;
+export type RenderScope = (typeof RENDER_SCOPES)[number];
+export const RENDER_SCOPE_LABELS: Record<RenderScope, string> = {
+  all: '全部场景（按顺序拼接）',
+  active: '仅当前场景',
+};
+
 /** H.264 CRF 与编码预设（真实作用于 Remotion renderMedia）。 */
 export const RENDER_QUALITIES = [
   { id: 'draft', label: '草稿（最快）', crf: 28 },
@@ -53,6 +65,7 @@ export const renderConfigSchema = z.object({
     '帧率只支持 24 / 30 / 60。'),
   quality: z.enum(RENDER_QUALITIES.map((item) => item.id) as [RenderQualityId, ...RenderQualityId[]]),
   outputDir: renderOutputDirSchema,
+  scope: z.enum(RENDER_SCOPES).default('all'),
 });
 export type RenderConfig = z.infer<typeof renderConfigSchema>;
 
@@ -62,6 +75,7 @@ export const DEFAULT_RENDER_CONFIG: RenderConfig = renderConfigSchema.parse({
   fps: PROJECT_DEFAULTS.fps,
   quality: 'standard',
   outputDir: 'renders',
+  scope: 'all',
 });
 
 /** PRD 14 导出步骤 1-5 的校验项。 */
@@ -84,13 +98,50 @@ export const renderCheckSchema = z.object({
 });
 export type RenderCheck = z.infer<typeof renderCheckSchema>;
 
+/**
+ * 多场景自动拼接的时间轴片段。
+ * 坐标是「全局项目逻辑帧」（30 FPS 基准），endFrame 为不含上界。
+ * 场景之间无缝衔接：下一个 startFrame 等于上一个 endFrame。
+ */
+export const renderSceneSpanSchema = z.object({
+  sceneId: z.string().min(1),
+  sceneName: z.string().min(1),
+  startFrame: z.number().int().nonnegative(),
+  durationFrames: z.number().int().positive(),
+  endFrame: z.number().int().positive(),
+});
+export type RenderSceneSpan = z.infer<typeof renderSceneSpanSchema>;
+
+/**
+ * 导出时生效的场景间转场明细（只读校验结果，供导出弹窗展示）。
+ * 只有导出范围内相邻的两个场景之间才会应用；按目标场景的「进入转场」配置。
+ */
+export const renderTransitionSchema = z.object({
+  fromSceneName: z.string().min(1),
+  toSceneName: z.string().min(1),
+  /** 项目逻辑帧，转场不额外占用时间轴。 */
+  durationFrames: z.number().int().positive(),
+  /** 按导出帧率换算后的帧数，仅供界面展示。 */
+  exportFrames: z.number().int().positive(),
+});
+export type RenderTransition = z.infer<typeof renderTransitionSchema>;
+
 export const renderValidationSchema = z.object({
   projectId: z.string().uuid(),
+  /** 首个导出场景；多场景拼接时仍保留，供兼容与界面显示。 */
   sceneId: z.string().nullable(),
+  /** 本次导出范围。 */
+  scope: z.enum(RENDER_SCOPES),
+  /** 本次参与导出的场景数。 */
+  sceneCount: z.number().int().nonnegative(),
+  /** 按导出顺序排列的场景时间轴，供界面展示拼接明细。 */
+  sceneSpans: z.array(renderSceneSpanSchema),
+  /** 本次导出实际生效的场景间转场（无转场时为空数组）。 */
+  sceneTransitions: z.array(renderTransitionSchema).default([]),
   checks: z.array(renderCheckSchema),
   canRender: z.boolean(),
   totalFrames: z.number().int().nonnegative(),
-  /** 项目逻辑帧（30 FPS 基准），未做导出帧率重采样。 */
+  /** 项目逻辑帧（30 FPS 基准），未做导出帧率重采样；多场景下为各场景时长之和。 */
   projectDurationFrames: z.number().int().nonnegative(),
   warnings: z.array(z.string()),
 });

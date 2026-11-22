@@ -51,6 +51,8 @@ export type TtsPlanRequest = z.infer<typeof ttsPlanRequestSchema>;
  */
 export const ttsPlanDialogueSchema = z.object({
   dialogueId: z.string().min(1).max(80),
+  /** 该对白所属场景；多场景项目按场景顺序展示，单场景项目也始终有值。 */
+  sceneName: z.string().min(1).max(80).optional(),
   characterName: z.string().min(1).max(80),
   text: z.string().min(1),
   currentStartFrame: z.number().int().nonnegative(),
@@ -71,7 +73,12 @@ export const ttsPlanSchema = z.object({
   protectedCount: z.number().int().nonnegative(),
   /** 已存在音频、生成后会被替换（新资产）的对白数量。 */
   replacingCount: z.number().int().nonnegative(),
+  /** 首个（工作台当前）场景的时长，保持阶段 7 语义不变。 */
   currentSceneDurationFrames: z.number().int().nonnegative(),
+  /** 本次生成覆盖的场景数；单场景项目为 1。 */
+  sceneCount: z.number().int().nonnegative(),
+  /** 全部场景顺序拼接后的总帧数，供多场景导出参考。 */
+  projectDurationFrames: z.number().int().nonnegative(),
   warning: z.string(),
 });
 export type TtsPlan = z.infer<typeof ttsPlanSchema>;

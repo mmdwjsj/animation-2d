@@ -274,8 +274,8 @@ export default function PropertyPanel({
             </dl>
           </div>
           <p className="px-4 py-3 text-xs leading-6 text-muted">
-            人物姿态与嘴型预览已在阶段 3 实现；时间轴与确定性帧预览、撤销 / 重做已在阶段 6
-            接入；真实配音与音频驱动属阶段 7。
+            人物分层、时间轴与确定性帧预览、撤销 / 重做、配音与音频驱动嘴型、多场景拼接导出
+            均已接入；使用上方场景栏切换当前编辑的场景。
           </p>
         </div>
       )}

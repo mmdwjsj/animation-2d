@@ -114,6 +114,14 @@ export default function TimelinePanel({ scene, audioAssets }: TimelinePanelProps
     }
   }, [events, selectedDialogueId, selectDialogue]);
 
+  // 切换场景时时间轴组件不卸载：复位横向滚动与进行中的拖动，
+  // 避免新场景沿用旧场景的播放位置、选中块或拖拽状态。
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollLeft = 0;
+    blockDragRef.current = null;
+    rulerDragRef.current = false;
+  }, [scene.id]);
+
   // 播放时保持播放头在可视区域内。
   useEffect(() => {
     if (!playing) return;

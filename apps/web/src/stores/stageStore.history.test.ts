@@ -311,3 +311,87 @@ describe('阶段 7：手动时间保护与服务端舞台应用', () => {
     expect(state().stage?.version).toBe(serverStage.version);
   });
 });
+
+describe('工作台场景切换', () => {
+  function multiScene(activeSceneId: string | null = 'scene-1') {
+    const base = makeStage();
+    const second = {
+      id: 'scene-2',
+      name: '厨房',
+      backgroundAssetId: null,
+      objects: [],
+      characters: [],
+      dialogueEvents: [
+        {
+          id: 'dlg-kitchen',
+          characterId: 'char-kitchen',
+          text: '我在这儿。',
+          posture: 'standing',
+          startFrame: 0,
+          durationFrames: 60,
+        },
+      ],
+    };
+    return stageDataSchema.parse({
+      ...base,
+      activeSceneId,
+      scenes: [base.scenes[0], second],
+    });
+  }
+
+  it('切换到第二个场景会更新 activeSceneId、清空选中并纳入撤销历史', () => {
+    useStageStore.setState({ stage: multiScene(), selectedId: 'char-1' });
+    state().setActiveScene('scene-2');
+
+    expect(state().stage?.activeSceneId).toBe('scene-2');
+    expect(selectActiveScene(state())?.id).toBe('scene-2');
+    expect(state().selectedId).toBeNull();
+    expect(state().saveStatus).toBe('dirty');
+    expect(state().historyPast).toHaveLength(1);
+    expect(state().historyPast[0].label).toContain('厨房');
+  });
+
+  it('切换后编辑只作用于新场景，原场景数据保持不变', () => {
+    useStageStore.setState({ stage: multiScene() });
+    const firstBefore = state().stage!.scenes[0];
+    state().setActiveScene('scene-2');
+    state().updateDialogue('dlg-kitchen', { text: '改了厨房台词' });
+
+    expect(events()[0].text).toBe('改了厨房台词');
+    expect(state().stage!.scenes[0]).toBe(firstBefore);
+  });
+
+  it('undo / redo 会回到 / 重放切换前的场景', () => {
+    useStageStore.setState({ stage: multiScene() });
+    state().setActiveScene('scene-2');
+    state().undo();
+    expect(state().stage?.activeSceneId).toBe('scene-1');
+    expect(selectActiveScene(state())?.name).toBe('客厅');
+    state().redo();
+    expect(state().stage?.activeSceneId).toBe('scene-2');
+  });
+
+  it('无效场景 id 不改变任何状态', () => {
+    useStageStore.setState({ stage: multiScene() });
+    const before = state().stage;
+    state().setActiveScene('scene-not-exist');
+    expect(state().stage).toBe(before);
+    expect(state().historyPast).toHaveLength(0);
+  });
+
+  it('点击已激活场景不产生历史，也不改写保存状态', () => {
+    useStageStore.setState({ stage: multiScene() });
+    state().setActiveScene('scene-1');
+    expect(state().historyPast).toHaveLength(0);
+    expect(state().saveStatus).toBe('saved');
+  });
+
+  it('旧数据 activeSceneId 为空时只修正指针，不压入切换历史', () => {
+    useStageStore.setState({ stage: multiScene(null) });
+    expect(selectActiveScene(state())?.id).toBe('scene-1');
+    state().setActiveScene('scene-1');
+    expect(state().stage?.activeSceneId).toBe('scene-1');
+    expect(state().saveStatus).toBe('dirty');
+    expect(state().historyPast).toHaveLength(0);
+  });
+});

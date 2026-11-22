@@ -25,6 +25,10 @@ export interface MuxOptions {
  * 每句 WAV 按对白起始帧换算成毫秒延迟，混合为一条与视频等长的立体声 AAC 音轨；
  * 视频流直接 copy，不二次编码，保证 Remotion 的 H.264 画质不受损。
  * 无音频时仍走 FFmpeg 做无损封装，明确产出无声 MP4，而不是伪造音轨。
+ *
+ * 不使用 -shortest：音轨已由 atrim + apad=whole_dur 精确补齐到视频时长，
+ * 而 AAC 编码自带 priming/padding 会让「最短流」比视频早结束几十毫秒，
+ * 实测会截断视频尾部若干帧（403 帧只输出 400 帧）。改为以视频流为准。
  */
 export function buildMuxArgs(options: MuxOptions): string[] {
   const args: string[] = ['-y', '-hide_banner', '-loglevel', 'error', '-i', options.silentVideo];
@@ -76,7 +80,6 @@ export function buildMuxArgs(options: MuxOptions): string[] {
     'aac',
     '-b:a',
     '192k',
-    '-shortest',
     '-movflags',
     '+faststart',
     options.outputFile,

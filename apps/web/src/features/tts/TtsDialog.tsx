@@ -205,7 +205,11 @@ export default function TtsDialog({
           <div className="mb-2 flex items-center justify-between">
             <h3 className="text-xs font-semibold text-ink">时间轴更新影响</h3>
             <span className="text-[11px] text-muted">
-              {planning ? '正在计算…' : plan ? `本次 ${plan.targetCount} 句` : '—'}
+              {planning
+                ? '正在计算…'
+                : plan
+                  ? `本次 ${plan.targetCount} 句 · ${plan.sceneCount} 个场景`
+                  : '—'}
             </span>
           </div>
           {planError && <p className="text-xs text-danger">{planError}</p>}
@@ -218,7 +222,7 @@ export default function TtsDialog({
               >
                 {plan.warning}
               </div>
-              <div className="mb-2 flex gap-3 text-[11px] text-muted">
+              <div className="mb-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted">
                 <span data-testid="tts-protected-count">
                   手动调整受保护：{plan.protectedCount} 句
                 </span>
@@ -226,6 +230,9 @@ export default function TtsDialog({
                   已有音频将被替换：{plan.replacingCount} 句
                 </span>
                 <span>当前场景时长：{plan.currentSceneDurationFrames} 帧</span>
+                <span data-testid="tts-project-duration">
+                  全部场景总时长：{plan.projectDurationFrames} 帧
+                </span>
               </div>
               <div className="max-h-[150px] space-y-1 overflow-y-auto pr-1">
                 {plan.dialogues.map((dialogue) => (
@@ -234,6 +241,14 @@ export default function TtsDialog({
                     data-testid="tts-plan-dialogue"
                     className="flex items-center gap-2 rounded bg-subtle px-2 py-1.5 text-[11px]"
                   >
+                    {dialogue.sceneName ? (
+                      <span
+                        className="shrink-0 rounded bg-elevated px-1.5 py-0.5 text-[10px] text-muted"
+                        title="所属场景"
+                      >
+                        {dialogue.sceneName}
+                      </span>
+                    ) : null}
                     <span className="w-14 shrink-0 text-ink">{dialogue.characterName}</span>
                     <span className="min-w-0 flex-1 truncate text-muted">{dialogue.text}</span>
                     <span

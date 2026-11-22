@@ -70,7 +70,7 @@ export default function ResourcePanel({
       {activeTab === 'scene' && (
         <div className="flex-1 overflow-auto px-3 py-3">
           <p className="mb-2 text-[11px] leading-5 text-muted">
-            当前项目为单场景（阶段 5 起支持多场景）。点击背景素材应用到画布。
+            点击背景素材仅替换当前场景的背景；切换场景请使用上方场景栏。
           </p>
           <button
             type="button"
