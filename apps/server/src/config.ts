@@ -14,7 +14,7 @@ export const appConfig = {
   dataDir,
   databasePath: path.join(dataDir, 'workbench.sqlite'),
   projectsDir: path.join(dataDir, 'projects'),
-  port: Number(process.env.PORT ?? 3001),
+  port: Number(process.env.PORT ?? 4002),
   host: process.env.HOST ?? '127.0.0.1',
   appVersion: '0.1.0',
 } as const;
